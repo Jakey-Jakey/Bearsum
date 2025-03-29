@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pocket Summarizer - Bearhacks Edition</title>
+    <title>Pocket Summarizer & Storyteller - Bearhacks Edition</title> {# Updated Title #}
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -12,7 +12,7 @@
 <body>
 
     <header class="app-header">
-        <h1>Pocket Summarizer <span class="theme-accent">(Bearhacks Edition)</span></h1>
+        <h1>Pocket Summarizer & Storyteller <span class="theme-accent">(Bearhacks Edition)</span></h1> {# Updated Title #}
     </header>
 
     <div class="container">
@@ -28,59 +28,38 @@
           {% endif %}
         {% endwith %}
 
-        <!-- Display Explicit Error Messages (if passed) -->
-        {% if error_messages %}
-            <div class="error-area flash-messages">
-                <h4>Errors Occurred During Last Process:</h4>
-                {% for error in error_messages %}
-                    <div class="flash flash-error">{{ error }}</div>
-                {% endfor %}
-            </div>
-        {% endif %}
-
-
-        <!-- Upload Form Section -->
+        <!-- Upload Form Section (Summarizer) -->
         <section class="upload-section">
-            <h2>Upload Your Files</h2>
+            <h2>Summarize Your Notes</h2> {# Clarify purpose #}
             <p>Drag & drop your notes (.txt, .md) or browse.</p>
             <div class="file-info">
                 Max files: {{ config.MAX_FILES }}, Max size per file: {{ config.MAX_FILE_SIZE_MB }}MB
             </div>
 
-            <!-- Add data attributes for JS config -->
             <form method="post"
                   enctype="multipart/form-data"
                   class="upload-form"
-                  id="upload-form"
+                  id="upload-form" {# Keep ID for JS? Or rename? Keep for now. #}
                   action="{{ url_for('process_files') }}"
                   data-max-files="{{ config.MAX_FILES }}"
                   data-max-file-size-mb="{{ config.MAX_FILE_SIZE_MB }}"
-                  data-is-processing="{{ is_processing | lower }}" {# Pass boolean as string #}
-                  data-task-id="{{ task_id if task_id else '' }}" {# Pass task_id #}
+                  {# Remove processing state from this form, handle via specific task IDs #}
                   >
-
-                <!-- Hidden Actual File Input -->
                 <input type="file" id="files" name="files" multiple required accept=".txt,.md" class="visually-hidden">
-
-                <!-- Drag and Drop Zone -->
                 <div id="drop-zone" class="drop-zone">
                     <p>Drag & Drop Files Here</p>
                     <p>or</p>
                     <a href="#" id="browse-files-link" class="btn btn-browse">Browse Files</a>
                 </div>
-
-                <!-- File List Display -->
                 <div id="file-list-display" class="file-list-display">
                     <p><em>No files selected. Drag & drop or browse.</em></p>
                 </div>
-
-                <!-- Summary Level Options (Ghost Button Style) -->
                 <div class="form-group">
                     <label>Summary Detail Level:</label>
-                    <div class="radio-group ghost-buttons"> {# Added class #}
+                    <div class="radio-group ghost-buttons">
                         <label>
-                            <input type="radio" name="summary_level" value="short" class="visually-hidden"> {# Hide input #}
-                            <span>Short</span> {# Wrap text #}
+                            <input type="radio" name="summary_level" value="short" class="visually-hidden">
+                            <span>Short</span>
                         </label>
                         <label>
                             <input type="radio" name="summary_level" value="medium" checked class="visually-hidden">
@@ -92,19 +71,44 @@
                         </label>
                     </div>
                 </div>
-
-                <!-- Submit Button -->
                 <div class="form-group submit-group">
-                    <button type="submit" class="btn btn-submit" id="submit-button">Summarize Files</button>
+                    {# Add data attribute to identify task type #}
+                    <button type="submit" class="btn btn-submit" id="submit-button-summary" data-task-type="summary">Summarize Files</button>
                 </div>
             </form>
         </section>
 
-        <!-- Wrapper for Processing Indicator Transition -->
-        <div id="processing-indicator-wrapper" class="processing-indicator-wrapper {% if not is_processing %}hidden{% endif %}">
+        {# --- NEW Story Generator Section --- #}
+        <section class="story-section upload-section"> {# Reuse upload-section style #}
+            <h2>Generate Your Bearhacks Story</h2>
+            <p>Paste your public GitHub repository URL to generate a fictional story based on recent commits.</p>
+
+            <form method="post"
+                  class="story-form upload-form" {# Reuse upload-form style #}
+                  id="story-form"
+                  action="{{ url_for('generate_story') }}"
+                  >
+                <div class="form-group">
+                     <label for="github_url">GitHub Repository URL:</label>
+                     <input type="url" id="github_url" name="github_url" required
+                            placeholder="https://github.com/owner/repo"
+                            class="form-control" {# Add a basic form control style #}
+                            >
+                </div>
+                 <div class="form-group submit-group">
+                     {# Add data attribute to identify task type #}
+                    <button type="submit" class="btn btn-submit" id="submit-button-story" data-task-type="story">Generate Story</button> {# Removed inline style #}
+                </div>
+            </form>
+        </section>
+
+
+        <!-- Processing Indicator Section (Generic) -->
+        {# Use one indicator, update text based on active task #}
+        <div id="processing-indicator-wrapper" class="processing-indicator-wrapper {% if not is_processing_summary and not is_processing_story %}hidden{% endif %}">
             <section id="processing-indicator" class="processing-indicator">
                  <div class="spinner"></div>
-                 <p>Processing your files... please wait.</p>
+                 <p id="processing-task-name">Processing...</p> {# Placeholder text #}
                  <div class="status-log live-status-area" id="live-status-log">
                      <h4>Live Status:</h4>
                      <p id="latest-status" class="latest-status-message">Initializing...</p>
@@ -112,15 +116,18 @@
             </section>
         </div>
 
-        <!-- Wrapper for Results Section Transition -->
-        <div id="results-container-wrapper" class="results-container-wrapper {% if is_processing or not (summary_html or summary_raw) %}hidden{% endif %}">
+        <!-- Results Section (Combined) -->
+        {# Show results from either task #}
+        <div id="results-container-wrapper" class="results-container-wrapper {% if not summary_html and not summary_raw and not story_html and not story_raw %}hidden{% endif %}">
             <section class="results-container" id="results-area">
+
+                {# --- Summary Results --- #}
                 {% if summary_html or summary_raw %}
                     <div class="results-area summary-section">
-                        <h2>Summary</h2>
+                        <h2>Summary Result</h2> {# Clarify which result #}
                         <div class="view-toggle">
-                            <button type="button" class="btn btn-toggle active" data-view="rendered">Rendered View</button>
-                            <button type="button" class="btn btn-toggle" data-view="raw">Raw Text</button>
+                            <button type="button" class="btn btn-toggle active" data-view="rendered" data-target="summary">Rendered View</button>
+                            <button type="button" class="btn btn-toggle" data-view="raw" data-target="summary">Raw Text</button>
                         </div>
                         <!-- Wrapper for view toggle transition -->
                         <div class="summary-view-wrapper" id="summary-view-wrapper">
@@ -131,16 +138,36 @@
                                 <pre id="summary-text-raw">{{ summary_raw }}</pre>
                             </div>
                         </div>
+{# templates/index.html - Snippet #}
+
                         <div class="action-buttons">
-                             <button type="button" id="copy-button" class="btn btn-copy">Copy Raw Text</button>
-                             {# Only show download if raw summary exists and is not an error message #}
-                             {% if summary_raw and not summary_raw.startswith("Error:") %}
+                             <button type="button" id="copy-button-summary" class="btn btn-copy" data-target="summary-text-raw">Copy Raw Text</button>
+                             {# --- CORRECTED CONDITION --- #}
+                             {# Only show download if summary_raw has valid content (not None/empty) #}
+                             {% if summary_raw %}
                              <a href="{{ url_for('download_summary') }}" class="btn btn-download">Download Raw (.txt)</a>
                              {% endif %}
+                             {# --- END CORRECTION --- #}
                         </div>
                     </div>
                 {% endif %}
-                {# Final status log display removed as live status covers it #}
+
+                {# --- Story Results --- #}
+                {% if story_html or story_raw %}
+                    <div class="results-area story-section">
+                        <h2>Story Result</h2> {# Clarify which result #}
+                        {# Maybe add view toggle later if needed #}
+                        <div id="story-rendered" class="summary-rendered"> {# Reuse style #}
+                             {% if story_html %}{{ story_html | safe }}{% else %}<p><em>{{ story_raw if story_raw else '(Could not render story)' }}</em></p>{% endif %}
+                        </div>
+                         {# Add copy/download later if desired #}
+                         <div class="action-buttons">
+                             {# Use innerText of the rendered div for copy #}
+                             <button type="button" id="copy-button-story" class="btn btn-copy" data-target="story-rendered">Copy Story Text</button>
+                         </div>
+                    </div>
+                {% endif %}
+
             </section>
         </div>
 
@@ -149,189 +176,189 @@
     <!-- JavaScript -->
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            // --- Element References ---
-            const uploadForm = document.getElementById('upload-form');
-            const submitButton = document.getElementById('submit-button');
-            // Reference the wrappers for transitions
+            // --- Element References (Keep all previous references) ---
+            const summaryForm = document.getElementById('upload-form');
+            const storyForm = document.getElementById('story-form');
+            const submitButtonSummary = document.getElementById('submit-button-summary');
+            const submitButtonStory = document.getElementById('submit-button-story');
             const processingIndicatorWrapper = document.getElementById('processing-indicator-wrapper');
+            const processingTaskName = document.getElementById('processing-task-name');
             const resultsContainerWrapper = document.getElementById('results-container-wrapper');
-            // Keep references to inner content if needed
-            const processingIndicator = document.getElementById('processing-indicator');
-            const resultsArea = document.getElementById('results-area');
             const latestStatusElement = document.getElementById('latest-status');
-            const copyButton = document.getElementById('copy-button');
+            const summaryViewWrapper = document.getElementById('summary-view-wrapper');
+            const summaryRenderedView = document.getElementById('summary-rendered');
+            const summaryRawView = document.getElementById('summary-raw');
             const summaryRawTextElement = document.getElementById('summary-text-raw');
-            const viewToggles = document.querySelectorAll('.view-toggle .btn-toggle');
-            const renderedView = document.getElementById('summary-rendered');
-            const rawView = document.getElementById('summary-raw');
-            const summaryViewWrapper = document.getElementById('summary-view-wrapper'); // Wrapper for view toggle
+            const summaryViewToggles = document.querySelectorAll('.summary-section .view-toggle .btn-toggle');
+            const copyButtonSummary = document.getElementById('copy-button-summary');
+            const storyRenderedView = document.getElementById('story-rendered');
+            const copyButtonStory = document.getElementById('copy-button-story');
             const fileInput = document.getElementById('files');
             const dropZone = document.getElementById('drop-zone');
             const fileListDisplay = document.getElementById('file-list-display');
             const browseFilesLink = document.getElementById('browse-files-link');
+            const githubUrlInput = document.getElementById('github_url');
 
-            // --- Config ---
-            const MAX_FILES = parseInt(uploadForm?.dataset.maxFiles || '5');
-            const MAX_FILE_SIZE_MB = parseInt(uploadForm?.dataset.maxFileSizeMb || '1');
-            const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+            // --- Config (Keep previous) ---
+            const MAX_FILES = parseInt(summaryForm?.dataset.maxFiles || '5');
+            const MAX_FILE_SIZE_MB = parseInt(summaryForm?.dataset.maxFileSizeMb || '1');
+            // ... rest of config ...
             const ALLOWED_EXTENSIONS = ['txt', 'md'];
 
-            // --- Initial State from Flask ---
-            const isProcessing = uploadForm?.dataset.isProcessing === 'true';
-            const taskId = uploadForm?.dataset.taskId;
+            // --- Initial State from Flask (Keep previous) ---
+            const isProcessingSummary = {{ is_processing_summary | tojson }};
+            const isProcessingStory = {{ is_processing_story | tojson }};
+            const summaryTaskId = "{{ summary_task_id if summary_task_id else '' }}";
+            const storyTaskId = "{{ story_task_id if story_task_id else '' }}";
+            let activeTaskId = isProcessingSummary ? summaryTaskId : (isProcessingStory ? storyTaskId : null);
+            let activeTaskType = isProcessingSummary ? 'summary' : (isProcessingStory ? 'story' : null);
             let eventSource = null;
 
-            // --- Helper: Update File List Display ---
-            function updateFileList(files) {
-                if (!fileListDisplay) return;
-                fileListDisplay.innerHTML = ''; // Clear previous list
-                if (!files || files.length === 0) {
-                    fileListDisplay.innerHTML = '<p><em>No files selected. Drag & drop or browse.</em></p>';
-                    return;
-                }
+            console.log("Initial State:", { isProcessingSummary, isProcessingStory, summaryTaskId, storyTaskId, activeTaskId, activeTaskType });
 
-                const list = document.createElement('ul');
-                Array.from(files).forEach((file, index) => { // Add index
-                    const li = document.createElement('li');
-                    let errorMsg = '';
-                    const fileExt = file.name.split('.').pop()?.toLowerCase() || '';
-                    if (file.size > MAX_FILE_SIZE_BYTES) {
-                        errorMsg = ` <span class="file-error">(Too large: > ${MAX_FILE_SIZE_MB}MB)</span>`;
-                    } else if (!ALLOWED_EXTENSIONS.includes(fileExt)) {
-                         errorMsg = ` <span class="file-error">(Invalid type)</span>`;
-                    }
-
-                    li.innerHTML = `${file.name} <span class="file-size">(${(file.size / 1024).toFixed(1)} KB)</span>${errorMsg}`;
-                    if (errorMsg) li.classList.add('has-error');
-                    li.style.animationDelay = `${index * 0.05}s`; // Stagger animation
-                    list.appendChild(li);
-                });
-                fileListDisplay.appendChild(list);
-
-                if (files.length > MAX_FILES) {
+            // --- Helper: Update File List Display (Keep previous) ---
+            function updateFileList(files) { /* ... Keep previous implementation ... */
+                 if (!fileListDisplay) return;
+                 fileListDisplay.innerHTML = '';
+                 if (!files || files.length === 0) {
+                     fileListDisplay.innerHTML = '<p><em>No files selected. Drag & drop or browse.</em></p>'; return;
+                 }
+                 const list = document.createElement('ul');
+                 Array.from(files).forEach((file, index) => {
+                     const li = document.createElement('li');
+                     let errorMsg = '';
+                     const fileExt = file.name.split('.').pop()?.toLowerCase() || '';
+                     if (file.size > (MAX_FILE_SIZE_MB * 1024 * 1024)) { errorMsg = ` <span class="file-error">(Too large)</span>`; }
+                     else if (!ALLOWED_EXTENSIONS.includes(fileExt)) { errorMsg = ` <span class="file-error">(Invalid type)</span>`; }
+                     li.innerHTML = `${file.name} <span class="file-size">(${(file.size / 1024).toFixed(1)} KB)</span>${errorMsg}`;
+                     if (errorMsg) li.classList.add('has-error');
+                     li.style.animationDelay = `${index * 0.05}s`;
+                     list.appendChild(li);
+                 });
+                 if (files.length > MAX_FILES) {
                      const errorLi = document.createElement('li');
-                     errorLi.innerHTML = `<span class="file-error">Error: Too many files selected (max ${MAX_FILES}).</span>`;
+                     errorLi.innerHTML = `<span class="file-error">Error: Too many files (max ${MAX_FILES}).</span>`;
                      errorLi.classList.add('has-error');
-                     errorLi.style.animationDelay = `${files.length * 0.05}s`; // Also stagger error message
+                     errorLi.style.animationDelay = `${files.length * 0.05}s`;
                      list.appendChild(errorLi);
-                }
+                 }
+                 fileListDisplay.appendChild(list);
             }
 
-             // --- Helper: Validate Files ---
-             function validateFiles(files) {
-                if (!files || files.length === 0) return false; // No files is invalid for submission
-                if (files.length > MAX_FILES) return false; // Too many files
+             // --- Helper: Validate Files (Keep previous) ---
+             function validateFiles(files) { /* ... Keep previous implementation ... */
+                  if (!files || files.length === 0) return false;
+                  if (files.length > MAX_FILES) return false;
+                  for (const file of files) {
+                      const fileExt = file.name.split('.').pop()?.toLowerCase() || '';
+                      if (file.size > (MAX_FILE_SIZE_MB * 1024 * 1024) || !ALLOWED_EXTENSIONS.includes(fileExt)) return false;
+                  }
+                  return true;
+             }
 
-                for (const file of files) {
-                    const fileExt = file.name.split('.').pop()?.toLowerCase() || '';
-                    if (file.size > MAX_FILE_SIZE_BYTES || !ALLOWED_EXTENSIONS.includes(fileExt)) {
-                        return false; // Individual file error
-                    }
-                }
-                return true; // All checks passed
-            }
-
-            // --- Helper: Show/Hide Wrappers for Transition ---
+            // --- Helper: Show/Hide Wrappers (Simplified CSS assumed) ---
             function showElementWrapper(wrapper) {
-                if (!wrapper) return;
-                wrapper.classList.remove('hidden');
+                if (wrapper) {
+                    console.log("Showing wrapper:", wrapper.id);
+                    wrapper.classList.remove('hidden');
+                } else {
+                    console.error("Attempted to show null wrapper");
+                }
             }
             function hideElementWrapper(wrapper) {
-                if (!wrapper) return;
-                wrapper.classList.add('hidden');
+                if (wrapper) {
+                    console.log("Hiding wrapper:", wrapper.id);
+                    wrapper.classList.add('hidden');
+                } else {
+                     console.error("Attempted to hide null wrapper");
+                }
             }
 
-            // --- Helper: Set View Wrapper Height ---
-            function setViewWrapperHeight() {
-                 if (!summaryViewWrapper) return;
-                 const activeView = summaryViewWrapper.querySelector(':not(.hidden)');
+            // --- Helper: Set View Wrapper Height (Keep previous) ---
+            function setViewWrapperHeight(wrapper, viewSelector = ':not(.hidden)') { /* ... Keep previous implementation ... */
+                 if (!wrapper) return;
+                 const activeView = wrapper.querySelector(viewSelector);
                  if (activeView) {
-                     // Use scrollHeight for accurate content height
-                     summaryViewWrapper.style.minHeight = `${activeView.scrollHeight}px`;
+                     wrapper.style.minHeight = `${activeView.scrollHeight + 10}px`;
                  } else {
-                     summaryViewWrapper.style.minHeight = '100px'; // Default fallback
+                     wrapper.style.minHeight = '100px';
                  }
             }
 
-
+            // --- Drag and Drop Helpers (Keep previous) ---
             function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
             function highlight(e) { dropZone?.classList.add('dragover'); }
             function unhighlight(e) { dropZone?.classList.remove('dragover'); }
-
-            function handleDrop(e) {
-                 const dt = e.dataTransfer;
-                 const files = dt.files;
-                 try {
-                      fileInput.files = files;
-                      updateFileList(files); // Update UI
-                 } catch (err) {
-                      console.error("Error setting file input files:", err);
-                      alert("There was an error processing the dropped files. Please try the 'browse' link instead.");
-                      updateFileList(null); // Clear list on error
-                 }
+            function handleDrop(e) { /* ... Keep previous implementation ... */
+                 const dt = e.dataTransfer; const files = dt.files;
+                 try { fileInput.files = files; updateFileList(files); }
+                 catch (err) { console.error("Error setting files:", err); alert("Drop error."); updateFileList(null); }
             }
 
 
-            // --- Drag and Drop Logic ---
-            if (dropZone && fileInput && fileListDisplay) {
-                 ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-                     dropZone.addEventListener(eventName, preventDefaults, false);
-                     document.body.addEventListener(eventName, preventDefaults, false);
-                 });
-                 ['dragenter', 'dragover'].forEach(eventName => dropZone.addEventListener(eventName, highlight, false));
-                 ['dragleave', 'drop'].forEach(eventName => dropZone.addEventListener(eventName, unhighlight, false));
-                 dropZone.addEventListener('drop', handleDrop, false);
-
-                 if (browseFilesLink) {
-                      browseFilesLink.addEventListener('click', (e) => {
-                          e.preventDefault();
-                          fileInput.click();
-                      });
-                 }
-                 dropZone.addEventListener('click', (event) => {
-                     if (!browseFilesLink || !event.target.isSameNode(browseFilesLink)) {
-                        fileInput.click();
-                     }
-                 });
-
-                 fileInput.addEventListener('change', function() { updateFileList(this.files); });
-                 updateFileList(fileInput.files); // Initial update
+            // --- Drag and Drop Logic (Keep previous) ---
+            if (dropZone && fileInput && fileListDisplay) { /* ... Keep previous implementation ... */
+                  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(ev => { dropZone.addEventListener(ev, preventDefaults, false); document.body.addEventListener(ev, preventDefaults, false); });
+                  ['dragenter', 'dragover'].forEach(ev => dropZone.addEventListener(ev, highlight, false));
+                  ['dragleave', 'drop'].forEach(ev => dropZone.addEventListener(ev, unhighlight, false));
+                  dropZone.addEventListener('drop', handleDrop, false);
+                  if (browseFilesLink) browseFilesLink.addEventListener('click', (e) => { e.preventDefault(); fileInput.click(); });
+                  dropZone.addEventListener('click', (e) => { if (!browseFilesLink || e.target.isSameNode(browseFilesLink)) {} else {fileInput.click();} }); // Fixed logic
+                  fileInput.addEventListener('change', function() { updateFileList(this.files); });
+                  updateFileList(fileInput.files);
             }
 
 
-            // --- SSE Connection Function ---
-            function connectSSE(taskId) {
-                // Ensure wrappers are referenced
+            // --- SSE Connection Function (Keep previous) ---
+            function connectSSE(taskId, taskType) { /* ... Keep previous implementation ... */
                 if (!taskId || !processingIndicatorWrapper || !resultsContainerWrapper || !latestStatusElement) return;
-                console.log(`Connecting to SSE stream for task: ${taskId}`);
+                if (eventSource) { console.log("Closing existing SSE connection."); eventSource.close(); eventSource = null; }
+
+                console.log(`Connecting to SSE stream for ${taskType} task: ${taskId}`);
                 eventSource = new EventSource(`/stream?channel=${taskId}`);
+                activeTaskId = taskId;
+                activeTaskType = taskType;
 
                 eventSource.onopen = function() {
                     console.log("SSE connection opened.");
-                    showElementWrapper(processingIndicatorWrapper); // Use wrapper helper
-                    hideElementWrapper(resultsContainerWrapper);   // Use wrapper helper
+                    showElementWrapper(processingIndicatorWrapper);
+                    hideElementWrapper(resultsContainerWrapper);
+                    if (processingTaskName) processingTaskName.textContent = taskType === 'summary' ? 'Summarizing Files...' : 'Generating Story...';
                     latestStatusElement.textContent = 'Connection established... waiting for updates.';
-                    latestStatusElement.classList.remove('animate-new'); // Reset animation class
+                    latestStatusElement.classList.remove('animate-new');
                     latestStatusElement.style.color = '';
+                    if(submitButtonSummary) submitButtonSummary.disabled = true;
+                    if(submitButtonStory) submitButtonStory.disabled = true;
                 };
 
                 eventSource.onmessage = function(event) {
                      console.log("SSE message received:", event.data);
+                     console.log("Target URL:", event.target.url, "Active Task ID:", activeTaskId);
                     try {
                         const data = JSON.parse(event.data);
-                        if (data.type === 'status' && latestStatusElement) {
-                            // Update text and trigger animation
-                            latestStatusElement.textContent = data.message;
-                            latestStatusElement.classList.remove('animate-new'); // Remove class briefly
-                            void latestStatusElement.offsetWidth; // Force reflow
-                            latestStatusElement.classList.add('animate-new'); // Add class to trigger animation
-                        }
-                        if (data.type === 'completed' || data.type === 'error') {
-                            console.log(`Processing ${data.type}. Closing SSE connection and reloading.`);
-                            if (eventSource) { eventSource.close(); eventSource = null; }
-                            latestStatusElement.textContent = `Processing ${data.type}. Reloading results...`;
-                            // Add a slight delay before reload to allow user to read final status
-                            setTimeout(() => { window.location.reload(); }, 1200); // Increased delay
+                        // Ensure message is for the active task
+                        if (activeTaskId && event.target.url.includes(activeTaskId)) {
+                            if (data.type === 'status' && latestStatusElement) {
+                                console.log("Updating status:", data.message);
+                                latestStatusElement.textContent = data.message;
+                                latestStatusElement.classList.remove('animate-new');
+                                void latestStatusElement.offsetWidth;
+                                latestStatusElement.classList.add('animate-new');
+                            }
+                            if (data.type === 'completed' || data.type === 'error') {
+                                console.log(`Task ${activeTaskId} ${data.type}. Closing SSE and reloading.`);
+                                if (eventSource) { eventSource.close(); eventSource = null; }
+                                latestStatusElement.textContent = `${taskType.charAt(0).toUpperCase() + taskType.slice(1)} ${data.type}. Reloading results...`;
+                                // Clear active task info *before* reload
+                                activeTaskId = null;
+                                activeTaskType = null;
+                                setTimeout(() => {
+                                     console.log("Reloading page now.");
+                                     window.location.reload();
+                                 }, 1200);
+                            }
+                        } else {
+                             console.warn(`Ignoring SSE message - Active Task ID mismatch or null. Active: ${activeTaskId}, Target URL: ${event.target.url}`);
                         }
                     } catch (e) {
                         console.error("Failed to parse SSE message or update UI:", e);
@@ -341,135 +368,164 @@
 
                 eventSource.onerror = function(err) {
                     console.error("SSE connection error:", err);
-                    if (latestStatusElement) {
-                         latestStatusElement.textContent = "Status update connection failed. Please refresh manually for results.";
-                         latestStatusElement.style.color = 'var(--color-error-text)';
-                         latestStatusElement.classList.remove('animate-new');
+                    // Check if the error is relevant to the active task
+                    if (activeTaskId && event.target.url.includes(activeTaskId)) {
+                        if (latestStatusElement) {
+                             latestStatusElement.textContent = "Status update connection failed. Please refresh manually for results.";
+                             latestStatusElement.style.color = 'var(--color-error-text)';
+                             latestStatusElement.classList.remove('animate-new');
+                        }
+                        hideElementWrapper(processingIndicatorWrapper);
+                        if(submitButtonSummary) submitButtonSummary.disabled = false;
+                        if(submitButtonStory) submitButtonStory.disabled = false;
+                        activeTaskId = null;
+                        activeTaskType = null;
+                    } else {
+                         console.warn("SSE error occurred, but not for the active task or no task active.");
                     }
                     if (eventSource) { eventSource.close(); eventSource = null; }
-                    // Hide processing indicator on error
-                    hideElementWrapper(processingIndicatorWrapper);
                 };
             }
 
-            // --- Initial Page Load Logic ---
-            if (isProcessing && taskId) {
-                connectSSE(taskId);
+            // --- Initial Page Load Logic (Keep previous, ensure buttons enabled) ---
+            if (isProcessingSummary && summaryTaskId) {
+                connectSSE(summaryTaskId, 'summary');
+            } else if (isProcessingStory && storyTaskId) {
+                connectSSE(storyTaskId, 'story');
             } else {
-                hideElementWrapper(processingIndicatorWrapper); // Use wrapper helper
-                 // Ensure results wrapper is shown if it should be (Flask logic handles initial hidden state)
+                hideElementWrapper(processingIndicatorWrapper);
                  if (resultsContainerWrapper && !resultsContainerWrapper.classList.contains('hidden')) {
                      showElementWrapper(resultsContainerWrapper);
-                     setViewWrapperHeight(); // Set initial height for view toggle
+                     if (summaryViewWrapper) { setViewWrapperHeight(summaryViewWrapper); }
+                 }
+                 if(submitButtonSummary) submitButtonSummary.disabled = false;
+                 if(submitButtonStory) submitButtonStory.disabled = false;
+            }
+
+            // --- Form Submission Logic (REVISED) ---
+            function handleFormSubmit(event, taskType) {
+                 console.log(`Handling submit for task type: ${taskType}`);
+                 event.preventDefault(); // Prevent default submission immediately
+
+                 let isValid = false;
+                 let loadingText = 'Processing...';
+                 const formElement = event.target.closest('form');
+
+                 // --- Validation ---
+                 if (taskType === 'summary') {
+                     const files = fileInput?.files;
+                     isValid = validateFiles(files);
+                     if (!isValid) {
+                         alert("Please select valid files (check type, size, and count) before submitting.");
+                         return; // Stop processing if invalid
+                     }
+                     loadingText = 'Summarizing Files...';
+                 } else if (taskType === 'story') {
+                     const url = githubUrlInput?.value?.trim(); // Trim whitespace
+                     isValid = url && url.startsWith("https://github.com/"); // Basic check
+                     if (!isValid) {
+                         alert("Please enter a valid HTTPS GitHub repository URL (e.g., https://github.com/owner/repo).");
+                         return; // Stop processing if invalid
+                     }
+                     loadingText = 'Generating Story...';
+                 } else {
+                      console.error("Unknown task type in handleFormSubmit:", taskType);
+                      return; // Unknown task
+                 }
+
+                 // --- If Valid, Proceed ---
+                 if (isValid) {
+                     console.log("Form is valid. Disabling buttons and showing indicator.");
+                     // Disable both buttons
+                     if(submitButtonSummary) submitButtonSummary.disabled = true;
+                     if(submitButtonStory) submitButtonStory.disabled = true;
+
+                     // Show loading indicator and hide results
+                     if (processingTaskName) processingTaskName.textContent = loadingText;
+                     if (latestStatusElement) {
+                         latestStatusElement.textContent = 'Submitting request...';
+                         latestStatusElement.classList.remove('animate-new'); // Reset animation
+                     }
+                     showElementWrapper(processingIndicatorWrapper); // Show loader
+                     hideElementWrapper(resultsContainerWrapper); // Hide results
+
+                     // Submit the form programmatically AFTER UI updates
+                     console.log("Submitting form:", formElement.id);
+                     formElement.submit();
+                 } else {
+                      console.log("Form is invalid. Submission stopped.");
+                      // Ensure buttons are enabled if validation failed after initial disable (shouldn't happen with current flow)
+                      if(submitButtonSummary) submitButtonSummary.disabled = false;
+                      if(submitButtonStory) submitButtonStory.disabled = false;
                  }
             }
 
-            // --- Form Submission Logic ---
-            if (uploadForm && processingIndicatorWrapper && resultsContainerWrapper && fileInput && submitButton) {
-                uploadForm.addEventListener('submit', function(event) {
-                    const files = fileInput.files;
-                    if (!validateFiles(files)) { // Use combined validation
-                         alert("Please select valid files (check type, size, and count) before submitting.");
-                         event.preventDefault(); return;
-                    }
-                    showElementWrapper(processingIndicatorWrapper); // Use wrapper helper
-                    hideElementWrapper(resultsContainerWrapper);   // Use wrapper helper
-                    submitButton.disabled = true;
-                    if (latestStatusElement) {
-                        latestStatusElement.textContent = 'Submitting files...';
-                        latestStatusElement.classList.remove('animate-new'); // Reset animation class
-                    }
-                    // No need to prevent default if validation passes, let form submit
-                });
+            if (summaryForm && submitButtonSummary) {
+                summaryForm.addEventListener('submit', (e) => handleFormSubmit(e, 'summary'));
+            }
+            if (storyForm && submitButtonStory) {
+                 storyForm.addEventListener('submit', (e) => handleFormSubmit(e, 'story'));
             }
 
-            // --- View Toggling Logic (Updated for Opacity/Visibility Transition) ---
-             if (viewToggles.length > 0 && renderedView && rawView && summaryViewWrapper) {
-                viewToggles.forEach(button => {
-                    button.addEventListener('click', function() {
-                        const viewToShow = this.getAttribute('data-view');
-
-                        // Update active button state
-                        viewToggles.forEach(btn => btn.classList.remove('active'));
-                        this.classList.add('active');
-
-                        // Toggle visibility using .hidden class for CSS transitions
-                        if (viewToShow === 'rendered') {
-                            renderedView.classList.remove('hidden');
-                            rawView.classList.add('hidden');
-                        } else {
-                            renderedView.classList.add('hidden');
-                            rawView.classList.remove('hidden');
-                        }
-                         // Update wrapper height after transition starts (or slightly after)
-                         setTimeout(setViewWrapperHeight, 50); // Small delay allows DOM update
-                    });
-                });
-
-                // Set initial view and height
-                const hasRenderedContent = renderedView && !renderedView.classList.contains('hidden') && renderedView.innerText.trim() !== '' && !renderedView.querySelector('p')?.innerText.includes('Could not render summary');
-                const hasRawContent = rawView && !rawView.classList.contains('hidden') && summaryRawTextElement && summaryRawTextElement.innerText.trim() !== '';
-
-                if (resultsContainerWrapper && !resultsContainerWrapper.classList.contains('hidden')) { // Only run if results are visible
-                    if (hasRenderedContent) {
-                         renderedView.classList.remove('hidden'); rawView.classList.add('hidden');
-                         viewToggles.forEach(btn => btn.classList.toggle('active', btn.getAttribute('data-view') === 'rendered'));
-                    } else if (hasRawContent) {
-                         renderedView.classList.add('hidden'); rawView.classList.remove('hidden');
-                         viewToggles.forEach(btn => btn.classList.toggle('active', btn.getAttribute('data-view') === 'raw'));
-                    } else {
-                         renderedView.classList.remove('hidden'); rawView.classList.add('hidden');
-                         viewToggles.forEach(btn => btn.classList.toggle('active', btn.getAttribute('data-view') === 'rendered'));
-                    }
-                    setViewWrapperHeight(); // Set initial height
-                }
+            // --- View Toggling Logic (Keep previous) ---
+             if (summaryViewToggles.length > 0 && summaryRenderedView && summaryRawView && summaryViewWrapper) {
+                 summaryViewToggles.forEach(button => { /* ... Keep previous implementation ... */
+                     button.addEventListener('click', function() {
+                         const viewToShow = this.getAttribute('data-view');
+                         summaryViewToggles.forEach(btn => btn.classList.remove('active'));
+                         this.classList.add('active');
+                         if (viewToShow === 'rendered') {
+                             summaryRenderedView.classList.remove('hidden');
+                             summaryRawView.classList.add('hidden');
+                         } else {
+                             summaryRenderedView.classList.add('hidden');
+                             summaryRawView.classList.remove('hidden');
+                         }
+                         setTimeout(() => setViewWrapperHeight(summaryViewWrapper), 50);
+                     });
+                 });
+                 // Initial height setting done during page load logic
             }
 
 
-            // --- Copy Button Logic ---
-            if (copyButton && summaryRawTextElement) {
-                // Ensure raw text exists and is not just whitespace or an error message
-                const rawTextContent = summaryRawTextElement.innerText?.trim();
-                if (rawTextContent && !rawTextContent.startsWith("Error:")) {
-                    copyButton.style.display = 'inline-block'; // Ensure it's visible
-                    copyButton.addEventListener('click', function() {
-                        const textToCopy = summaryRawTextElement.innerText; // Copy original text including whitespace
-                        console.log("Attempting to copy raw text...");
-                        if (!navigator.clipboard) {
-                            alert('Clipboard API not available (maybe insecure context/HTTP?). Please copy manually.');
-                            return;
-                        }
-                        navigator.clipboard.writeText(textToCopy).then(function() {
-                            console.log("Copy successful");
-                            copyButton.innerText = 'Copied!';
-                            copyButton.disabled = true;
-                            setTimeout(function() {
-                                copyButton.innerText = 'Copy Raw Text';
-                                copyButton.disabled = false;
-                            }, 1500);
-                        }, function(err) {
-                            console.error('Could not copy text: ', err);
-                            alert('Failed to copy text. See console for details.');
-                            copyButton.innerText = 'Copy Failed';
-                             setTimeout(function() {
-                                copyButton.innerText = 'Copy Raw Text';
-                            }, 1500);
-                        });
-                    });
-                } else {
-                     console.log("Copy button hidden: No valid raw text content.");
-                     copyButton.style.display = 'none'; // Hide if no valid content
-                }
-            } else if (copyButton) {
-                 console.log("Copy button hidden: Target element not found or button itself missing.");
-                 copyButton.style.display = 'none'; // Hide if elements missing
+            // --- Copy Button Logic (Keep previous) ---
+            function handleCopyClick(button) { /* ... Keep previous implementation ... */
+                  const targetId = button.getAttribute('data-target');
+                  const targetElement = document.getElementById(targetId);
+                  if (!targetElement) { console.error(`Copy target #${targetId} not found.`); return; }
+                  let textToCopy = targetElement.innerText || targetElement.value || targetElement.textContent;
+                  textToCopy = textToCopy?.trim();
+                  if (!textToCopy) { console.warn(`No text in #${targetId} to copy.`); return; }
+                  if (!navigator.clipboard) { alert('Clipboard API not available.'); return; }
+                  navigator.clipboard.writeText(textToCopy).then(() => {
+                      const originalText = button.innerText; button.innerText = 'Copied!'; button.disabled = true;
+                      setTimeout(() => { button.innerText = originalText; button.disabled = false; }, 1500);
+                  }, (err) => {
+                      console.error('Copy failed: ', err); const originalText = button.innerText; button.innerText = 'Copy Failed';
+                      setTimeout(() => { button.innerText = originalText; }, 1500);
+                  });
             }
+
+            [copyButtonSummary, copyButtonStory].forEach(button => { /* ... Keep previous implementation ... */
+                 if (button) {
+                     const targetId = button.getAttribute('data-target');
+                     const targetElement = document.getElementById(targetId);
+                     const content = targetElement?.innerText?.trim() || targetElement?.value?.trim() || targetElement?.textContent?.trim();
+                     const isError = content?.startsWith("Error:") || content?.includes('(Could not render');
+                     if (!targetElement || !content || isError) { button.style.display = 'none'; }
+                     else { button.style.display = 'inline-block'; button.addEventListener('click', () => handleCopyClick(button)); }
+                 }
+            });
+
 
             // Recalculate view wrapper height on window resize
-            window.addEventListener('resize', setViewWrapperHeight);
+            window.addEventListener('resize', () => {
+                 if (summaryViewWrapper && !summaryViewWrapper.classList.contains('hidden')) {
+                    setViewWrapperHeight(summaryViewWrapper);
+                 }
+            });
 
         }); // End DOMContentLoaded
     </script>
-
 </body>
 </html>
