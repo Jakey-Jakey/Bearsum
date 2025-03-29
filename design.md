@@ -1,141 +1,171 @@
 ---
 layout: default
-title: "Pocket Summarizer Design"
+title: "Pocket Summarizer & Storyteller Design"
 ---
 
-# Pocket Summarizer: Design Documentation
+# Pocket Summarizer & Storyteller: Design Documentation
 
-This document outlines the design and architecture of the Pocket Summarizer application, built using Python, Flask, and the PocketFlow framework. It's intended for understanding the system's components, data flow, and implementation details, potentially for LLM ingestion or developer onboarding.
+This document outlines the design and architecture of the Pocket Summarizer & Storyteller application, built using Python and Flask. It incorporates the original summarization feature and the added GitHub Story Generator. It's intended for understanding the system's components, data flow, and implementation details, potentially for LLM ingestion or developer onboarding.
 
 ## 1. Requirements
 
 ### 1.1. Core Goal
-To provide a web application allowing users to upload multiple text-based files (`.txt`, `.md`), have them summarized cohesively by an AI model (Perplexity), and receive the final summary with options for detail level and output format (rendered Markdown, raw text, download, copy).
+To provide a web application allowing users to:
+1.  Upload multiple text-based files (`.txt`, `.md`), have them summarized cohesively by an AI model (Perplexity), and receive the final summary.
+2.  Input a public GitHub repository URL, have recent commit activity analyzed by an AI model (Perplexity), and receive a short, fictional "hackathon story".
 
 ### 1.2. Key Features
-*   **Multi-File Upload:** Accept multiple `.txt` and `.md` files per request.
+*   **Multi-File Upload:** Accept multiple `.txt` and `.md` files per request for summarization.
 *   **Drag & Drop Interface:** Allow users to drag files onto a designated area for uploading.
-*   **AI Summarization:** Utilize the Perplexity AI API (via `llama-3-sonar` models) to generate summaries.
+*   **AI Summarization:** Utilize the Perplexity AI API (`llama-3-sonar` models) to generate summaries.
 *   **Selectable Summary Levels:** Offer "Short", "Medium", and "Comprehensive" options for the final combined summary detail.
-*   **Asynchronous Processing:** Handle the summarization process in the background to avoid blocking the web server and provide a responsive UI.
-*   **Live Status Updates:** Use Server-Sent Events (SSE) to push real-time progress updates from the backend to the frontend during processing.
-*   **Output Views:** Display the final summary as both rendered Markdown and raw text, with a toggle.
-*   **Output Actions:** Allow users to copy the raw summary text to the clipboard and download it as a `.txt` file.
-*   **Theming:** Apply a "Honey/Bear" visual theme suitable for the Bearhacks event.
+*   **GitHub Story Generator:** Accept a public GitHub URL, fetch recent commits, and use Perplexity API (`llama-3-sonar-large`) to generate a fictional narrative.
+*   **Asynchronous Processing:** Handle summarization and story generation in background threads (`threading`) to avoid blocking the web server.
+*   **Live Status Updates:** Use Server-Sent Events (SSE) via Flask-SSE (Redis backend) to push real-time progress updates for both tasks.
+*   **Output Views:** Display the final summary as both rendered Markdown and raw text. Display the generated story as rendered Markdown.
+*   **Output Actions:** Allow users to copy the raw summary text, download it, and copy the generated story text.
+*   **UI Enhancements:** Polished "Honey/Bear" theme using CSS variables, gradients, and subtle animations/transitions for improved user experience.
 
 ### 1.3. Technology Stack
 *   **Backend:** Python 3
 *   **Web Framework:** Flask
-*   **Workflow Orchestration:** PocketFlow (custom minimalist framework provided)
 *   **Session Management:** Flask-Session (filesystem backend)
 *   **Real-time Updates:** Flask-SSE (requires Redis backend)
-*   **Background Tasks:** Python `threading` module (simplification for hackathon)
+*   **Background Tasks:** Python `threading` module
 *   **LLM API:** Perplexity AI API (accessed via `openai` Python library compatibility mode)
+*   **GitHub API:** `requests` library for fetching commit data.
 *   **Markdown Processing:** `Markdown` library
-*   **Frontend:** HTML5, CSS3, JavaScript (vanilla)
-*   **Dependencies:** See `requirements.txt` (includes `Flask`, `openai`, `python-dotenv`, `werkzeug`, `Flask-Session`, `Flask-SSE`, `Markdown`, `redis`)
+*   **Frontend:** HTML5, CSS3, JavaScript (vanilla, embedded in HTML)
+*   **Dependencies:** See `requirements.txt` (includes `Flask`, `openai`, `python-dotenv`, `werkzeug`, `Flask-Session`, `Flask-SSE`, `Markdown`, `redis`, `requests`)
 
 ## 2. Flow Design
 
-The application employs an asynchronous request-response pattern orchestrated by Flask, PocketFlow (within a background thread), and Server-Sent Events (SSE).
+The application employs two primary asynchronous request-response flows managed by Flask, background threads, and SSE.
 
-### 2.1. High-Level User Interaction Flow
-1.  **Upload (GET `/`):** User visits the main page. The server renders the initial upload form.
-2.  **Submit (POST `/process`):**
-    *   User selects/drops files, chooses summary level, and submits the form.
-    *   Flask (`app.py`) receives the request.
-    *   Validates inputs (file count, size, type, summary level).
-    *   Saves valid uploaded files to a unique temporary directory.
-    *   Generates a unique `task_id`.
-    *   Starts a background thread (`run_pocketflow_async`), passing `task_id`, temporary file details, and summary level.
-    *   Stores the `task_id` in the user's session (`session['current_task_id']`).
-    *   Redirects the user back to the main page (`GET /`).
-3.  **Processing (GET `/` + SSE `/stream`):**
-    *   The browser loads the main page (`GET /`).
-    *   Flask (`app.py`) sees `current_task_id` in the session but no results yet in `task_results`. It renders the page in "processing" mode, passing `is_processing=True` and the `task_id` to the template.
-    *   Frontend JavaScript (`index.html`) detects `is_processing` and `task_id`. It establishes an SSE connection to `/stream?channel=<task_id>`.
-    *   The in-page loading indicator and live status area are displayed.
-4.  **Background PocketFlow Execution (Thread):**
-    *   The `run_pocketflow_async` function executes the PocketFlow graph.
-    *   Nodes within the flow (`FileProcessorNode`, `CombineSummariesNode`) perform their tasks.
-    *   Nodes use a helper (`publish_sse`) to send status updates (`{'type': 'status', 'message': '...'}`) via SSE using the `task_id` as the channel.
-    *   Frontend JS receives these messages and updates the live status display (`#latest-status`).
-5.  **Completion (Thread + SSE):**
-    *   The background thread finishes PocketFlow execution.
-    *   It stores the final summary and any errors in the global `task_results` dictionary, keyed by `task_id`.
-    *   It publishes a final SSE message (`{'type': 'completed', ...}` or `{'type': 'error', ...}`) on the task's channel.
-6.  **Results Display (SSE -> Reload -> GET `/`):**
-    *   Frontend JS receives the `completed` or `error` SSE message.
-    *   It closes the SSE connection.
-    *   It triggers a page reload (`window.location.reload()`).
-    *   The browser requests the main page again (`GET /`).
-    *   Flask (`app.py`) sees `current_task_id` in the session *and* finds corresponding results in `task_results`.
-    *   It retrieves (`pop`) the results from `task_results` and clears the `task_id` from the session.
-    *   It renders the Markdown summary to HTML.
-    *   It stores the raw summary in the session (`session['download_summary_raw']`) for the download button.
-    *   It renders the template, passing the rendered HTML, raw text, and final status log (if implemented). `is_processing` is now `False`.
-    *   The template displays the results section (rendered/raw views, copy/download buttons) and hides the processing indicator.
+### 2.1. Summarizer Flow
+1.  **Upload (GET `/`):** User visits the main page. Renders forms.
+2.  **Submit Summary (POST `/process`):**
+    *   User selects/drops files, chooses summary level, submits the summarizer form.
+    *   Flask (`app.py`) receives request. Validates inputs (files, level). Saves valid files to a temporary directory.
+    *   Generates a unique `task_id`. Starts `run_summarizer_async` background thread, passing `task_id`, file details, level.
+    *   Stores `task_id` in `session['current_summary_task_id']`. Redirects to `GET /`.
+3.  **Processing Summary (GET `/` + SSE `/stream`):**
+    *   Browser loads `/`. Flask sees `current_summary_task_id` in session. Checks `task_results` for this ID.
+    *   If task ID exists and state is 'processing', renders page with `is_processing_summary=True`, passing `summary_task_id`.
+    *   Frontend JS detects processing state, connects to SSE `/stream?channel=<task_id>`. Displays loading indicator.
+4.  **Background Summarizer Execution (Thread - `run_summarizer_async`):**
+    *   (Simplified logic without PocketFlow assumed here based on current `app.py`)
+    *   Initializes task state in `task_results`. Publishes initial SSE status.
+    *   Iterates through files: Reads content, calls `llm_caller.get_initial_summary`. Publishes SSE status updates.
+    *   Combines valid summaries. Calls `llm_caller.get_combined_summary`. Publishes SSE status.
+    *   Handles errors during the process.
+    *   Stores final summary or error message in `task_results[task_id]['result']`. Sets state to 'completed' or 'error'. Publishes final SSE status. Cleans up temporary files.
+5.  **Results Display (SSE -> Reload -> GET `/`):**
+    *   Frontend JS receives 'completed'/'error' SSE message for the active task. Reloads page (`window.location.reload()`).
+    *   Browser requests `GET /`. Flask sees `current_summary_task_id` in session. Checks `task_results`.
+    *   Finds task ID with state 'completed'/'error'. `pop`s the results from `task_results`. Clears `task_id` from session.
+    *   Renders Markdown summary to HTML (if successful). Stores raw summary in session for download.
+    *   Renders template with results, `is_processing_summary=False`. Displays results section.
 
-### 2.2. PocketFlow Graph
-A simple linear flow executed within the background thread:
+### 2.2. Story Generator Flow
+1.  **Input (GET `/`):** User visits the main page. Renders forms.
+2.  **Submit Story URL (POST `/generate_story`):**
+    *   User enters public GitHub URL, submits the story form.
+    *   Flask (`app.py`) receives request. Performs basic URL validation.
+    *   Generates a unique `task_id`. Starts `run_story_generation_async` background thread, passing `task_id`, URL.
+    *   Stores `task_id` in `session['current_story_task_id']`. Redirects to `GET /`.
+3.  **Processing Story (GET `/` + SSE `/stream`):**
+    *   Browser loads `/`. Flask sees `current_story_task_id` in session. Checks `task_results`.
+    *   If task ID exists and state is 'processing', renders page with `is_processing_story=True`, passing `story_task_id`.
+    *   Frontend JS detects processing state, connects to SSE `/stream?channel=<task_id>`. Displays loading indicator (updating text).
+4.  **Background Story Execution (Thread - `run_story_generation_async`):**
+    *   Initializes task state in `task_results`. Publishes initial SSE status ("Validating...").
+    *   Calls `github_utils.parse_github_url`. Handles `GitHubUrlError`. Publishes SSE status ("Fetching...").
+    *   Calls `github_utils.get_recent_commits`. Handles `RepoNotFoundError`, `GitHubApiError`. Publishes SSE status ("Found N commits...").
+    *   Formats commit data into a string.
+    *   Calls `llm_caller.get_hackathon_story`. Handles LLM errors. Publishes SSE status ("Story complete!").
+    *   Handles other exceptions.
+    *   Stores final story (Markdown) or error message in `task_results[task_id]['result']`. Sets state to 'completed' or 'error'. Publishes final SSE status.
+5.  **Results Display (SSE -> Reload -> GET `/`):**
+    *   Frontend JS receives 'completed'/'error' SSE message for the active task. Reloads page.
+    *   Browser requests `GET /`. Flask sees `current_story_task_id` in session. Checks `task_results`.
+    *   Finds task ID with state 'completed'/'error'. `pop`s the results. Clears `task_id` from session.
+    *   Renders Markdown story to HTML (if successful).
+    *   Renders template with results, `is_processing_story=False`. Displays results section.
+
+### 2.3. Story Generator Flow Diagram
 
 ```mermaid
 graph LR
-    Start --> A[FileProcessorNode];
-    A -- default --> B(CombineSummariesNode);
-    B --> End;
-```
+    A[User Submits URL] --> B{Validate URL?};
+    B -- Valid --> C[Fetch Commits via GitHub API];
+    B -- Invalid --> H[Show URL Error];
+    C -- Success (Commits Found) --> D[Format Commits for LLM];
+    C -- Repo Not Found/Private --> I[Show Repo Error];
+    C -- API Error/No Commits --> J[Show Fetch/Commit Error];
+    D --> E[Call LLM for Story];
+    E -- Success --> F[Store & Display Story];
+    E -- LLM Error --> K[Show LLM Error];
+    F --> G[End];
+    H --> G;
+    I --> G;
+    J --> G;
+    K --> G;
 
-*   **`FileProcessorNode`:** A `BatchNode` that iterates through each valid uploaded file.
-*   **`CombineSummariesNode`:** A standard `Node` that aggregates results from the previous step.
+    style G fill:#ddd,stroke:#333,stroke-width:2px
+```
 
 ## 3. Utilities (`pocketflow_logic/utils/`)
 
-*   **`file_handler.py`:**
-    *   **Purpose:** Handles secure saving of uploaded files, validation, and reading content.
+*   **`file_handler.py`:** (Unchanged) Handles secure saving of uploaded files for summarizer, validation (count, size, type), and reading content.
+*   **`llm_caller.py`:** (Updated)
+    *   Interface to Perplexity AI API using `openai` library.
+    *   Handles API key config, model selection (`sonar-small`, `sonar-large`), basic API error handling.
+    *   Existing functions: `call_llm`, `get_initial_summary`, `get_combined_summary`.
+    *   **New Function:** `get_hackathon_story(repo_name, formatted_commits_str)`: Formats the story prompt using `HACKATHON_STORY_PROMPT_TEMPLATE` and calls `call_llm` with the appropriate model (`sonar-large`).
+*   **`github_utils.py`:** (New)
+    *   **Purpose:** Handles interaction with the public GitHub API for fetching commit data.
+    *   **Dependencies:** `requests`.
     *   **Key Functions:**
-        *   `save_uploaded_files(files, temp_dir)`: Validates count, size (<1MB), type (`.txt`, `.md`). Uses `werkzeug.secure_filename` and UUIDs for safe, unique temporary filenames within the provided `temp_dir`. Returns structured details and errors.
-        *   `read_file_content(filepath)`: Reads UTF-8 text content from a file path.
-*   **`llm_caller.py`:**
-    *   **Purpose:** Provides an interface to the Perplexity AI API using the `openai` library in compatibility mode. Handles API key configuration, prompt formatting, model selection, and basic error handling.
-    *   **Configuration:** Reads `PERPLEXITY_API_KEY` from `.env`. Sets `base_url` to `https://api.perplexity.ai`.
-    *   **Models:** Uses `llama-3-sonar-small-8b-chat` for initial summaries and `llama-3-sonar-large-8b-chat` for combination by default.
-    *   **Key Functions:**
-        *   `call_llm(prompt, model)`: Sends the request to the Perplexity API via the configured `openai` client. Handles common API errors (Auth, Rate Limit, Connection, etc.) and returns either the text content or an error string.
-        *   `get_initial_summary(text_content)`: Formats the initial summary prompt and calls `call_llm` with the small model.
-        *   `get_combined_summary(summaries_text, level)`: Formats the combination prompt using the provided `level` ("short", "medium", "comprehensive") and calls `call_llm` with the large model.
+        *   `parse_github_url(url)`: Validates input is a `https://github.com/owner/repo` URL using `urllib.parse` and regex. Extracts owner/repo. Raises `GitHubUrlError` on failure.
+        *   `get_recent_commits(owner, repo, days=3, limit=30)`: Fetches recent commit data (author name, date, first line of message) from the GitHub Commits API v3 using `requests`. Handles common HTTP errors (404, 403, 422) by raising specific exceptions (`RepoNotFoundError`, `GitHubApiError`) or returning an empty list. Handles network errors.
 
-## 4. Node Design (`pocketflow_logic/nodes.py`)
+## 4. Node Design (`pocketflow_logic/nodes.py`, `flow.py`)
 
-Nodes are executed within the background thread (`run_pocketflow_async`) and receive the `task_id` via the `shared` dictionary to publish SSE updates.
-
-*   **`FileProcessorNode(BatchNode)`:**
-    *   **`prep(shared)`:** Retrieves `task_id`, publishes initial SSE status, gets list of valid `temp_file_details` from `shared`. Returns the list of file detail dicts.
-    *   **`exec(item)`:** Processes one file detail dict (`item`). Publishes SSE status ("Processing 'file.txt'...", "Reading...", "Requesting summary..."). Calls `file_handler.read_file_content`. Calls `llm_caller.get_initial_summary`. Publishes SSE status ("Received summary..."). Returns `{'original_name': ..., 'summary': ...}`.
-    *   **`exec_fallback(prep_res, exc)`:** Handles errors during `exec` after retries. Publishes SSE error status. Returns error summary structure.
-    *   **`post(shared, prep_res, exec_res_list)`:** Collects results from `exec_res_list`, stores them in `shared['file_summaries']`. Publishes final processing count via SSE. Returns `"default"` action.
-*   **`CombineSummariesNode(Node)`:**
-    *   **`prep(shared)`:** Retrieves `task_id`, publishes SSE status. Retrieves `file_summaries` and `summary_level` from `shared`. Filters valid summaries, combines them into a single string. Publishes SSE status ("Combining N summaries..."). Returns `(combined_text, failed_files, processed_files, summary_level)`.
-    *   **`exec(inputs)`:** Unpacks inputs. Publishes SSE status ("Requesting final summary..."). Calls `llm_caller.get_combined_summary` with `combined_text` and `summary_level`. Publishes SSE status ("Received final summary..."). Returns `(final_summary, failed_files)`.
-    *   **`exec_fallback(prep_res, exc)`:** Handles errors during final combination LLM call. Publishes SSE error status. Returns error summary structure.
-    *   **`post(shared, prep_res, exec_res)`:** Unpacks results. Appends notes about failed files to the `final_summary` string. Stores the result in `shared['final_summary']`. *Note: Status publishing is handled by `run_pocketflow_async` upon completion.*
+*   **Summarizer Task:** The current implementation in `app.py` (`run_summarizer_async`) performs the summarization steps directly within the background thread, bypassing the PocketFlow nodes (`FileProcessorNode`, `CombineSummariesNode`) defined in `nodes.py` and the flow defined in `flow.py`. If PocketFlow is desired for the summarizer, `run_summarizer_async` needs to be updated to instantiate and run the `create_summary_flow`.
+*   **Story Generator Task:** This feature does not use PocketFlow. The logic is contained within the `run_story_generation_async` function in `app.py`, which calls utility functions directly.
 
 ## 5. Implementation Notes
 
-*   **Flask Structure (`app.py`):** Defines routes (`/`, `/process`, `/download_summary`), configures Flask extensions (Session, SSE), manages application context for the background thread, handles temporary result storage (`task_results` dict).
-*   **Background Task (`threading`):** Uses Python's built-in `threading` for simplicity. The `run_pocketflow_async` function encapsulates the PocketFlow execution. Requires `with app.app_context():` for extensions like `sse.publish` to work correctly.
-*   **SSE (`Flask-SSE`):** Requires a running Redis server. Used for pushing status messages from the background thread/nodes to the connected frontend client via the `/stream` endpoint. Nodes use a helper `publish_sse` which ensures app context.
-*   **Temporary Result Storage (`task_results` dict):** A simple global dictionary stores the final results keyed by `task_id`. This is **not suitable for production** (not persistent, potential race conditions if scaled, memory usage). Results are popped once retrieved by the GET `/` route.
-*   **Session (`Flask-Session`):** Uses the filesystem backend to store `current_task_id` and `download_summary_raw` server-side, avoiding cookie size limits.
-*   **Frontend JS (`index.html` `<script>`):** Handles drag-and-drop, client-side validation, SSE connection, live status updates, UI state changes (showing/hiding loader/results), view toggling (rendered/raw), and copy-to-clipboard functionality.
-*   **Markdown (`Markdown` library):** Used in the GET `/` route to convert the raw summary text to HTML for display. Uses `| safe` filter in Jinja2 template (acceptable risk given source).
+*   **Flask Structure (`app.py`):**
+    *   Defines routes: `/` (GET), `/process` (POST for summarizer), `/generate_story` (POST for story generator), `/download_summary` (GET).
+    *   Configures Flask extensions (Session, SSE).
+    *   Manages application context for background threads.
+    *   **Background Tasks:** Uses separate functions (`run_summarizer_async`, `run_story_generation_async`) launched via `threading.Thread`.
+    *   **Task Management:** Uses separate session keys (`current_summary_task_id`, `current_story_task_id`) to track active tasks.
+    *   **Result Storage:** Uses a single global dictionary `task_results`, storing type, state, result, and errors keyed by `task_id`. **Not suitable for production.**
+    *   **Index Route Logic:** Contains logic to check session for active tasks, query `task_results` for state/results, pop completed tasks, and pass appropriate flags/data to the template. Handles race condition by checking task state before popping.
+*   **SSE (`Flask-SSE`):** Used by both background tasks to push status messages (`{'type': 'status', ...}`) and completion/error events (`{'type': 'completed'/'error', ...}`) to the frontend via the `/stream` endpoint, using the `task_id` as the channel.
+*   **Frontend JS (Embedded in `index.html`):**
+    *   Handles drag-and-drop for summarizer.
+    *   Performs client-side validation for both forms.
+    *   Manages UI state (showing/hiding loading indicator and results sections based on flags passed from Flask).
+    *   Establishes SSE connection based on the active task ID passed from Flask. Updates live status text. Triggers page reload on task completion/error.
+    *   Handles view toggling for summary results.
+    *   Handles copy-to-clipboard functionality for summary and story.
+*   **CSS (`static/style.css`):**
+    *   Implements the refined "Honey/Bear" theme using CSS variables.
+    *   Includes styles for layout, typography, forms, buttons, indicators, results display.
+    *   Defines subtle animations (spinner, status update fade-in) and transitions (section visibility, button interactions, view toggling) using CSS `transition` and `@keyframes`.
+    *   Includes `@media (prefers-reduced-motion: reduce)` query to disable animations/transitions for accessibility.
+*   **Dependencies:** `requests` library added for GitHub API interaction.
 
 ## 6. Optimization & Reliability Considerations
 
-*   **Background Tasks:** Replace `threading` with a robust task queue like Celery or RQ for better scalability, error handling, and resource management in production.
-*   **Result Storage:** Replace the global `task_results` dict with a persistent store (e.g., Redis, database) for reliability and scalability.
-*   **SSE Backend:** Ensure Redis is properly configured and potentially scaled for production SSE usage.
-*   **Temporary File Cleanup:** The current implementation relies on the OS or manual cleanup for the `temp_dir` created by `/process` if the app crashes mid-thread. A more robust solution would involve the background thread explicitly deleting the directory upon completion or error.
-*   **Markdown Sanitization:** For increased security against potential (though unlikely) injection via LLM output, use a library like `bleach` to sanitize the HTML generated by the `Markdown` library before rendering.
-*   **Error Handling:** More granular error reporting via SSE and better handling of thread failures could be implemented.
-*   **Client-Side Validation:** While present, it can be bypassed; server-side validation remains crucial.
+*   **Background Tasks:** Replace `threading` with Celery/RQ for production.
+*   **Result Storage:** Replace `task_results` dict with Redis/database for persistence and scalability.
+*   **SSE Backend:** Ensure Redis is robust for production.
+*   **Temp File Cleanup:** Summarizer cleanup happens in the thread; ensure robustness.
+*   **Markdown Sanitization:** Consider `bleach` for sanitizing LLM output before rendering HTML.
+*   **Error Handling:** More granular error reporting via SSE could be implemented. GitHub API rate limiting needs careful handling in a production scenario (e.g., using authenticated requests, caching).
+*   **JS Complexity:** The embedded JS handling two task types is becoming complex; consider splitting into separate files or using a lightweight frontend framework for better organization if features expand further.
