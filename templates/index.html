@@ -100,42 +100,49 @@
             </form>
         </section>
 
-        <!-- Processing Indicator Section -->
-        <section id="processing-indicator" class="processing-indicator {% if not is_processing %}hidden{% endif %}">
-             <div class="spinner"></div>
-             <p>Processing your files... please wait.</p>
-             <div class="status-log live-status-area" id="live-status-log">
-                 <h4>Live Status:</h4>
-                 <p id="latest-status" class="latest-status-message">Initializing...</p>
-             </div>
-        </section>
+        <!-- Wrapper for Processing Indicator Transition -->
+        <div id="processing-indicator-wrapper" class="processing-indicator-wrapper {% if not is_processing %}hidden{% endif %}">
+            <section id="processing-indicator" class="processing-indicator">
+                 <div class="spinner"></div>
+                 <p>Processing your files... please wait.</p>
+                 <div class="status-log live-status-area" id="live-status-log">
+                     <h4>Live Status:</h4>
+                     <p id="latest-status" class="latest-status-message">Initializing...</p>
+                 </div>
+            </section>
+        </div>
 
-        <!-- Results Section -->
-        <section class="results-container {% if is_processing or not (summary_html or summary_raw) %}hidden{% endif %}" id="results-area">
-            {% if summary_html or summary_raw %}
-                <div class="results-area summary-section">
-                    <h2>Summary</h2>
-                    <div class="view-toggle">
-                        <button type="button" class="btn btn-toggle active" data-view="rendered">Rendered View</button>
-                        <button type="button" class="btn btn-toggle" data-view="raw">Raw Text</button>
+        <!-- Wrapper for Results Section Transition -->
+        <div id="results-container-wrapper" class="results-container-wrapper {% if is_processing or not (summary_html or summary_raw) %}hidden{% endif %}">
+            <section class="results-container" id="results-area">
+                {% if summary_html or summary_raw %}
+                    <div class="results-area summary-section">
+                        <h2>Summary</h2>
+                        <div class="view-toggle">
+                            <button type="button" class="btn btn-toggle active" data-view="rendered">Rendered View</button>
+                            <button type="button" class="btn btn-toggle" data-view="raw">Raw Text</button>
+                        </div>
+                        <!-- Wrapper for view toggle transition -->
+                        <div class="summary-view-wrapper" id="summary-view-wrapper">
+                            <div id="summary-rendered" class="summary-rendered">
+                                {% if summary_html %}{{ summary_html | safe }}{% else %}<p><em>(Could not render summary)</em></p>{% endif %}
+                            </div>
+                            <div id="summary-raw" class="summary-raw hidden">
+                                <pre id="summary-text-raw">{{ summary_raw }}</pre>
+                            </div>
+                        </div>
+                        <div class="action-buttons">
+                             <button type="button" id="copy-button" class="btn btn-copy">Copy Raw Text</button>
+                             {# Only show download if raw summary exists and is not an error message #}
+                             {% if summary_raw and not summary_raw.startswith("Error:") %}
+                             <a href="{{ url_for('download_summary') }}" class="btn btn-download">Download Raw (.txt)</a>
+                             {% endif %}
+                        </div>
                     </div>
-                    <div id="summary-rendered" class="summary-rendered">
-                        {% if summary_html %}{{ summary_html | safe }}{% else %}<p><em>(Could not render summary)</em></p>{% endif %}
-                    </div>
-                    <div id="summary-raw" class="summary-raw hidden">
-                        <pre id="summary-text-raw">{{ summary_raw }}</pre>
-                    </div>
-                    <div class="action-buttons">
-                         <button type="button" id="copy-button" class="btn btn-copy">Copy Raw Text</button>
-                         {# Only show download if raw summary exists and is not an error message #}
-                         {% if summary_raw and not summary_raw.startswith("Error:") %}
-                         <a href="{{ url_for('download_summary') }}" class="btn btn-download">Download Raw (.txt)</a>
-                         {% endif %}
-                    </div>
-                </div>
-            {% endif %}
-            {# Final status log display removed as live status covers it #}
-        </section>
+                {% endif %}
+                {# Final status log display removed as live status covers it #}
+            </section>
+        </div>
 
     </div> <!-- /container -->
 
@@ -145,6 +152,10 @@
             // --- Element References ---
             const uploadForm = document.getElementById('upload-form');
             const submitButton = document.getElementById('submit-button');
+            // Reference the wrappers for transitions
+            const processingIndicatorWrapper = document.getElementById('processing-indicator-wrapper');
+            const resultsContainerWrapper = document.getElementById('results-container-wrapper');
+            // Keep references to inner content if needed
             const processingIndicator = document.getElementById('processing-indicator');
             const resultsArea = document.getElementById('results-area');
             const latestStatusElement = document.getElementById('latest-status');
@@ -153,6 +164,7 @@
             const viewToggles = document.querySelectorAll('.view-toggle .btn-toggle');
             const renderedView = document.getElementById('summary-rendered');
             const rawView = document.getElementById('summary-raw');
+            const summaryViewWrapper = document.getElementById('summary-view-wrapper'); // Wrapper for view toggle
             const fileInput = document.getElementById('files');
             const dropZone = document.getElementById('drop-zone');
             const fileListDisplay = document.getElementById('file-list-display');
@@ -179,7 +191,7 @@
                 }
 
                 const list = document.createElement('ul');
-                Array.from(files).forEach(file => {
+                Array.from(files).forEach((file, index) => { // Add index
                     const li = document.createElement('li');
                     let errorMsg = '';
                     const fileExt = file.name.split('.').pop()?.toLowerCase() || '';
@@ -191,6 +203,7 @@
 
                     li.innerHTML = `${file.name} <span class="file-size">(${(file.size / 1024).toFixed(1)} KB)</span>${errorMsg}`;
                     if (errorMsg) li.classList.add('has-error');
+                    li.style.animationDelay = `${index * 0.05}s`; // Stagger animation
                     list.appendChild(li);
                 });
                 fileListDisplay.appendChild(list);
@@ -199,6 +212,7 @@
                      const errorLi = document.createElement('li');
                      errorLi.innerHTML = `<span class="file-error">Error: Too many files selected (max ${MAX_FILES}).</span>`;
                      errorLi.classList.add('has-error');
+                     errorLi.style.animationDelay = `${files.length * 0.05}s`; // Also stagger error message
                      list.appendChild(errorLi);
                 }
             }
@@ -217,6 +231,29 @@
                 return true; // All checks passed
             }
 
+            // --- Helper: Show/Hide Wrappers for Transition ---
+            function showElementWrapper(wrapper) {
+                if (!wrapper) return;
+                wrapper.classList.remove('hidden');
+            }
+            function hideElementWrapper(wrapper) {
+                if (!wrapper) return;
+                wrapper.classList.add('hidden');
+            }
+
+            // --- Helper: Set View Wrapper Height ---
+            function setViewWrapperHeight() {
+                 if (!summaryViewWrapper) return;
+                 const activeView = summaryViewWrapper.querySelector(':not(.hidden)');
+                 if (activeView) {
+                     // Use scrollHeight for accurate content height
+                     summaryViewWrapper.style.minHeight = `${activeView.scrollHeight}px`;
+                 } else {
+                     summaryViewWrapper.style.minHeight = '100px'; // Default fallback
+                 }
+            }
+
+
             function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
             function highlight(e) { dropZone?.classList.add('dragover'); }
             function unhighlight(e) { dropZone?.classList.remove('dragover'); }
@@ -225,16 +262,7 @@
                  const dt = e.dataTransfer;
                  const files = dt.files;
                  try {
-                      // Create a new FileList - this is tricky, direct assignment often fails
-                      // Best approach: Use DataTransfer object to set files if possible
-                      // Or, store files in a separate array and handle submission differently (more complex)
-                      // Hacky workaround for some browsers:
-                      // fileInput.files = files; // Try direct assignment first
-                      // If direct assignment fails, we might need hidden inputs per file or FormData manipulation
-
-                      // For now, assume direct assignment works or rely on user selecting via browse after drop
                       fileInput.files = files;
-
                       updateFileList(files); // Update UI
                  } catch (err) {
                       console.error("Error setting file input files:", err);
@@ -273,16 +301,18 @@
 
             // --- SSE Connection Function ---
             function connectSSE(taskId) {
-                if (!taskId || !processingIndicator || !resultsArea || !latestStatusElement) return;
+                // Ensure wrappers are referenced
+                if (!taskId || !processingIndicatorWrapper || !resultsContainerWrapper || !latestStatusElement) return;
                 console.log(`Connecting to SSE stream for task: ${taskId}`);
                 eventSource = new EventSource(`/stream?channel=${taskId}`);
 
                 eventSource.onopen = function() {
                     console.log("SSE connection opened.");
-                    processingIndicator.classList.remove('hidden');
-                    resultsArea.classList.add('hidden');
+                    showElementWrapper(processingIndicatorWrapper); // Use wrapper helper
+                    hideElementWrapper(resultsContainerWrapper);   // Use wrapper helper
                     latestStatusElement.textContent = 'Connection established... waiting for updates.';
-                    latestStatusElement.style.color = ''; // Reset color
+                    latestStatusElement.classList.remove('animate-new'); // Reset animation class
+                    latestStatusElement.style.color = '';
                 };
 
                 eventSource.onmessage = function(event) {
@@ -290,13 +320,18 @@
                     try {
                         const data = JSON.parse(event.data);
                         if (data.type === 'status' && latestStatusElement) {
+                            // Update text and trigger animation
                             latestStatusElement.textContent = data.message;
+                            latestStatusElement.classList.remove('animate-new'); // Remove class briefly
+                            void latestStatusElement.offsetWidth; // Force reflow
+                            latestStatusElement.classList.add('animate-new'); // Add class to trigger animation
                         }
                         if (data.type === 'completed' || data.type === 'error') {
                             console.log(`Processing ${data.type}. Closing SSE connection and reloading.`);
                             if (eventSource) { eventSource.close(); eventSource = null; }
                             latestStatusElement.textContent = `Processing ${data.type}. Reloading results...`;
-                            setTimeout(() => { window.location.reload(); }, 750);
+                            // Add a slight delay before reload to allow user to read final status
+                            setTimeout(() => { window.location.reload(); }, 1200); // Increased delay
                         }
                     } catch (e) {
                         console.error("Failed to parse SSE message or update UI:", e);
@@ -309,8 +344,11 @@
                     if (latestStatusElement) {
                          latestStatusElement.textContent = "Status update connection failed. Please refresh manually for results.";
                          latestStatusElement.style.color = 'var(--color-error-text)';
+                         latestStatusElement.classList.remove('animate-new');
                     }
                     if (eventSource) { eventSource.close(); eventSource = null; }
+                    // Hide processing indicator on error
+                    hideElementWrapper(processingIndicatorWrapper);
                 };
             }
 
@@ -318,31 +356,44 @@
             if (isProcessing && taskId) {
                 connectSSE(taskId);
             } else {
-                if (processingIndicator) processingIndicator.classList.add('hidden');
+                hideElementWrapper(processingIndicatorWrapper); // Use wrapper helper
+                 // Ensure results wrapper is shown if it should be (Flask logic handles initial hidden state)
+                 if (resultsContainerWrapper && !resultsContainerWrapper.classList.contains('hidden')) {
+                     showElementWrapper(resultsContainerWrapper);
+                     setViewWrapperHeight(); // Set initial height for view toggle
+                 }
             }
 
             // --- Form Submission Logic ---
-            if (uploadForm && processingIndicator && resultsArea && fileInput && submitButton) {
+            if (uploadForm && processingIndicatorWrapper && resultsContainerWrapper && fileInput && submitButton) {
                 uploadForm.addEventListener('submit', function(event) {
                     const files = fileInput.files;
                     if (!validateFiles(files)) { // Use combined validation
                          alert("Please select valid files (check type, size, and count) before submitting.");
                          event.preventDefault(); return;
                     }
-                    processingIndicator.classList.remove('hidden');
-                    resultsArea.classList.add('hidden');
+                    showElementWrapper(processingIndicatorWrapper); // Use wrapper helper
+                    hideElementWrapper(resultsContainerWrapper);   // Use wrapper helper
                     submitButton.disabled = true;
-                    if (latestStatusElement) latestStatusElement.textContent = 'Submitting files...';
+                    if (latestStatusElement) {
+                        latestStatusElement.textContent = 'Submitting files...';
+                        latestStatusElement.classList.remove('animate-new'); // Reset animation class
+                    }
+                    // No need to prevent default if validation passes, let form submit
                 });
             }
 
-            // --- View Toggling Logic ---
-             if (viewToggles.length > 0 && renderedView && rawView) {
+            // --- View Toggling Logic (Updated for Opacity/Visibility Transition) ---
+             if (viewToggles.length > 0 && renderedView && rawView && summaryViewWrapper) {
                 viewToggles.forEach(button => {
                     button.addEventListener('click', function() {
                         const viewToShow = this.getAttribute('data-view');
+
+                        // Update active button state
                         viewToggles.forEach(btn => btn.classList.remove('active'));
                         this.classList.add('active');
+
+                        // Toggle visibility using .hidden class for CSS transitions
                         if (viewToShow === 'rendered') {
                             renderedView.classList.remove('hidden');
                             rawView.classList.add('hidden');
@@ -350,35 +401,39 @@
                             renderedView.classList.add('hidden');
                             rawView.classList.remove('hidden');
                         }
+                         // Update wrapper height after transition starts (or slightly after)
+                         setTimeout(setViewWrapperHeight, 50); // Small delay allows DOM update
                     });
                 });
-                // Set initial view based on content presence
-                const hasRenderedContent = renderedView && renderedView.innerText.trim() !== '' && !renderedView.querySelector('p')?.innerText.includes('Could not render summary');
-                const hasRawContent = summaryRawTextElement && summaryRawTextElement.innerText.trim() !== '';
 
-                if (hasRenderedContent) {
-                    renderedView.classList.remove('hidden');
-                    rawView.classList.add('hidden');
-                    viewToggles.forEach(btn => btn.classList.toggle('active', btn.getAttribute('data-view') === 'rendered'));
-                } else if (hasRawContent) {
-                    renderedView.classList.add('hidden');
-                    rawView.classList.remove('hidden');
-                    viewToggles.forEach(btn => btn.classList.toggle('active', btn.getAttribute('data-view') === 'raw'));
-                } else {
-                     // Default if no content (e.g., initial load)
-                     renderedView.classList.remove('hidden');
-                     rawView.classList.add('hidden');
-                     viewToggles.forEach(btn => btn.classList.toggle('active', btn.getAttribute('data-view') === 'rendered'));
+                // Set initial view and height
+                const hasRenderedContent = renderedView && !renderedView.classList.contains('hidden') && renderedView.innerText.trim() !== '' && !renderedView.querySelector('p')?.innerText.includes('Could not render summary');
+                const hasRawContent = rawView && !rawView.classList.contains('hidden') && summaryRawTextElement && summaryRawTextElement.innerText.trim() !== '';
+
+                if (resultsContainerWrapper && !resultsContainerWrapper.classList.contains('hidden')) { // Only run if results are visible
+                    if (hasRenderedContent) {
+                         renderedView.classList.remove('hidden'); rawView.classList.add('hidden');
+                         viewToggles.forEach(btn => btn.classList.toggle('active', btn.getAttribute('data-view') === 'rendered'));
+                    } else if (hasRawContent) {
+                         renderedView.classList.add('hidden'); rawView.classList.remove('hidden');
+                         viewToggles.forEach(btn => btn.classList.toggle('active', btn.getAttribute('data-view') === 'raw'));
+                    } else {
+                         renderedView.classList.remove('hidden'); rawView.classList.add('hidden');
+                         viewToggles.forEach(btn => btn.classList.toggle('active', btn.getAttribute('data-view') === 'rendered'));
+                    }
+                    setViewWrapperHeight(); // Set initial height
                 }
             }
 
 
             // --- Copy Button Logic ---
             if (copyButton && summaryRawTextElement) {
-                if (summaryRawTextElement.innerText && summaryRawTextElement.innerText.trim() !== '' && !summaryRawTextElement.innerText.startsWith("Error:")) {
-                    copyButton.style.display = 'inline-block';
+                // Ensure raw text exists and is not just whitespace or an error message
+                const rawTextContent = summaryRawTextElement.innerText?.trim();
+                if (rawTextContent && !rawTextContent.startsWith("Error:")) {
+                    copyButton.style.display = 'inline-block'; // Ensure it's visible
                     copyButton.addEventListener('click', function() {
-                        const textToCopy = summaryRawTextElement.innerText;
+                        const textToCopy = summaryRawTextElement.innerText; // Copy original text including whitespace
                         console.log("Attempting to copy raw text...");
                         if (!navigator.clipboard) {
                             alert('Clipboard API not available (maybe insecure context/HTTP?). Please copy manually.');
@@ -402,13 +457,16 @@
                         });
                     });
                 } else {
-                     console.log("Copy button hidden: No raw text content or content is error.");
-                     copyButton.style.display = 'none';
+                     console.log("Copy button hidden: No valid raw text content.");
+                     copyButton.style.display = 'none'; // Hide if no valid content
                 }
             } else if (copyButton) {
-                 console.log("Copy button hidden: Target element not found.");
-                 copyButton.style.display = 'none';
+                 console.log("Copy button hidden: Target element not found or button itself missing.");
+                 copyButton.style.display = 'none'; // Hide if elements missing
             }
+
+            // Recalculate view wrapper height on window resize
+            window.addEventListener('resize', setViewWrapperHeight);
 
         }); // End DOMContentLoaded
     </script>
