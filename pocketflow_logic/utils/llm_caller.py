@@ -33,9 +33,11 @@ else:
 
 # --- Define Perplexity Models ---
 # Using smaller/faster Sonar Llama 3 model for initial summaries
-INITIAL_SUMMARY_MODEL = "sonar"
+INITIAL_SUMMARY_MODEL = "sonar" # Use updated model names if needed
 # Using larger Sonar Llama 3 model for potentially better combination
-COMBINATION_MODEL = "sonar"
+COMBINATION_MODEL = "sonar" # Use updated model names if needed
+# Use a capable model for creative writing
+STORY_MODEL = "sonar"
 
 # --- Define prompts centrally ---
 INITIAL_SUMMARY_PROMPT_TEMPLATE = """
@@ -67,6 +69,25 @@ Coherent Combined Document ({level}):
 """
 # -----------------------------------------
 
+# --- New Hackathon Story Prompt Template ---
+HACKATHON_STORY_PROMPT_TEMPLATE = """
+You are a fun, slightly dramatic storyteller. Based *only* on the following recent commit log from a public GitHub repository named '{repo_name}' during a hackathon event called Bearhacks, write a short (2-4 paragraphs), engaging, fictional narrative about the developers' journey.
+
+*   Weave the commit messages and author names into the story naturally.
+*   Embellish creatively! Imagine the late nights, the bugs squashed, the features brought to life.
+*   Keep the tone lighthearted, maybe a bit epic or humorous, fitting for a 'Bearhacks' theme (think honey, bears, coding dens).
+*   Focus on the *implied* effort and collaboration, not just the technical details.
+*   Do NOT just list the commits. Create a *story*.
+*   Start the story with a title like: ### The Epic Tale of {repo_name}'s Bearhacks Adventure!
+*   Ensure the output is valid Markdown.
+
+Recent Commit Activity:
+{formatted_commits_str}
+
+Now, tell the tale:
+"""
+
+
 # --- call_llm function remains the same ---
 def call_llm(prompt, model):
     """
@@ -74,7 +95,7 @@ def call_llm(prompt, model):
 
     Args:
         prompt (str): The prompt to send to the LLM.
-        model (str): The Perplexity model name to use (e.g., 'llama-3-sonar-small-8b-chat').
+        model (str): The Perplexity model name to use (e.g., 'llama-3-sonar-small-32k-chat').
 
     Returns:
         str: The LLM's response content, or an error message string.
@@ -90,9 +111,10 @@ def call_llm(prompt, model):
         # Use the same chat completions structure
         response = client.chat.completions.create(
             model=model,
-            messages=[{"role": "user", "content": prompt}]
+            messages=[{"role": "user", "content": prompt}],
             # Add other parameters like temperature, max_tokens if needed
-            # e.g., temperature=0.7, max_tokens=1024
+            # Consider adding temperature for more creative stories, e.g., temperature=0.8
+            temperature=0.7
         )
 
         # Check response structure (same as before)
@@ -140,3 +162,15 @@ def get_combined_summary(summaries_text, level="medium"):
     prompt = COMBINATION_PROMPT_TEMPLATE.format(combined_summaries=summaries_text, level=level)
     return call_llm(prompt, model=COMBINATION_MODEL)
 # ------------------------------------------
+
+# --- New function for Hackathon Story ---
+def get_hackathon_story(repo_name: str, formatted_commits_str: str):
+    """Generates the prompt and calls Perplexity for hackathon story generation."""
+    if not repo_name:
+        repo_name = "a Mysterious Project" # Fallback repo name
+
+    prompt = HACKATHON_STORY_PROMPT_TEMPLATE.format(
+        repo_name=repo_name,
+        formatted_commits_str=formatted_commits_str
+    )
+    return call_llm(prompt, model=STORY_MODEL)
