@@ -12,7 +12,6 @@ Both tools leverage the Perplexity AI API (using Llama 3 models) to generate hig
 
 ### Core Functionality
 - **Multi-file summarization** of `.txt` and `.md` files with adjustable detail levels
-- **GitHub commit-to-story generation** that turns code commits into creative narratives
 - **Live progress updates** during processing via Server-Sent Events
 - **Asynchronous processing** that keeps the UI responsive
 
