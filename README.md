@@ -1,129 +1,127 @@
-# Pocket Summarizer & Storyteller (Bearhacks Edition)
+# 🐻 Pocket Summarizer & Storyteller
 
-A web application built with Flask that summarizes multiple uploaded text files (`.txt`, `.md`) using the Perplexity AI API, and *also* generates fictional "hackathon stories" based on recent GitHub commit activity. Features selectable summary lengths, live progress updates via SSE, and a polished, animated UI.
+A polished web application built with Flask that offers two powerful AI-powered tools in one interface:
 
-## Features
+1. **File Summarizer** - Upload multiple text files and get a concise AI-generated summary
+2. **GitHub Storyteller** - Transform any public GitHub repository's commit history into an entertaining fictional narrative
 
-*   **Multi-File Upload:** Upload multiple `.txt` and `.md` files simultaneously for summarization.
-*   **Drag & Drop:** Modern drag-and-drop interface for file uploads (also includes traditional browse).
-*   **AI Summarization:** Leverages the Perplexity AI API (`llama-3-sonar` models) for summarization.
-*   **Selectable Summary Levels:** Choose between "Short", "Medium", or "Comprehensive" final summaries.
-*   **GitHub Story Generator:** Paste a public GitHub repository URL to generate a short, fictional narrative inspired by recent commit activity.
-*   **Live Status Updates:** Real-time feedback on both summarization and story generation processes using Server-Sent Events (SSE).
-*   **Asynchronous Processing:** File processing and story generation happen in the background without blocking the UI.
-*   **Dual Summary Views:** View the summary as rendered Markdown or raw text.
-*   **Output Actions:** Copy the raw summary text to the clipboard or download it as a `.txt` file. Copy the generated story text.
-*   **Polished UI:** Refined "Honey/Bear" theme with subtle animations and transitions for a modern user experience.
+Both tools leverage the Perplexity AI API (using Llama 3 models) to generate high-quality, readable content.
 
-## Tech Stack
+![Screenshot of application](https://placeholder-for-your-screenshot.com)
 
-*   **Backend:** Python 3, Flask
-*   **Real-time:** Flask-SSE (requires Redis)
-*   **Sessions:** Flask-Session (filesystem backend)
-*   **Background Tasks:** Python `threading`
-*   **LLM:** Perplexity AI API (via `openai` library)
-*   **GitHub API:** `requests` library
-*   **Markdown:** `Markdown` library
-*   **Frontend:** HTML5, CSS3, Vanilla JavaScript
+## ✨ Features
 
-## Project Structure
+### Core Functionality
+- **Multi-file summarization** of `.txt` and `.md` files with adjustable detail levels
+- **GitHub commit-to-story generation** that turns code commits into creative narratives
+- **Live progress updates** during processing via Server-Sent Events
+- **Asynchronous processing** that keeps the UI responsive
+
+### User Experience
+- **Modern drag-and-drop interface** for file uploads
+- **Real-time status updates** during processing
+- **Polished animations and transitions** throughout the interface
+- **Responsive design** with careful attention to interactive details
+- **Task-focused workflow** that adapts the interface based on the current state
+- **Dark mode support** for comfortable viewing in different environments
+
+### Technical Highlights
+- **Flask backend** with Redis-powered SSE for real-time updates
+- **Vanilla JavaScript** frontend (no framework dependencies)
+- **Modular architecture** for easy maintenance and extension
+- **Comprehensive error handling** for a robust user experience
+
+## 🚀 Setup and Installation
+
+### Prerequisites
+- Python 3.8+
+- Redis server (for SSE real-time updates)
+- Perplexity AI API key
+
+### Installation
+
+1. **Clone the repository**
+```bash
+   git clone https://github.com/yourusername/pocket-summarizer.git
+   cd pocket-summarizer
+```
+
+2. **Set up a virtual environment**
+```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+
+3. **Install dependencies**
+```
+   pip install -r requirements.txt
+```
+
+4. **Redis Setup**
+   - **Docker (recommended):**
+  ```
+     docker run -d -p 6379:6379 --name pocket-summarizer-redis redis
+```
+   - **Windows:** Download from [microsoftarchive/redis](https://github.com/microsoftarchive/redis/releases)
+   - **macOS:** `brew install redis && brew services start redis`
+   - **Linux:** `sudo apt update && sudo apt install redis-server`
+
+5. **Environment Configuration**
+   - Copy `.env.example` to `.env`
+   - Add your Perplexity API key to `PERPLEXITY_API_KEY`
+   - Generate a Flask secret key: `python -c 'import secrets; print(secrets.token_hex(24))'`
+   - Add this key to `FLASK_SECRET_KEY`
+
+## 🎮 Usage
+
+### Starting the Application
+```bash
+flask run
+# OR
+python app.py
+```
+
+Navigate to `http://127.0.0.1:5000` in your browser.
+
+### Using the File Summarizer
+1. Drag & drop text files onto the upload area (or click to browse)
+2. Select your desired summary length (Short, Medium, or Comprehensive)
+3. Click "Summarize Files"
+4. Watch the progress updates
+5. View your summary in rendered or raw format
+6. Copy or download the result as needed
+
+## 🛠️ Project Structure
 
 ```
 pocket_summarizer/
 ├── app.py             # Flask application (routes, SSE, background task logic)
-├── pocketflow/        # PocketFlow library code 
-│   └── __init__.py
-├── pocketflow_logic/  # Core application logic
-│   ├── __init__.py
-│   ├── flow.py          # PocketFlow Flow definition (if used)
-│   ├── nodes.py         # PocketFlow Node definitions (if used)
-│   └── utils/           # Helper modules
-│       ├── __init__.py
-│       ├── file_handler.py # File saving, validation, reading
-│       ├── llm_caller.py   # Perplexity API interaction
-│       └── github_utils.py # GitHub API interaction  <-- NEW
 ├── static/            # CSS, JS
-│   ├── script.js        # (Note: JS is embedded in index.html in current version)
-│   └── style.css
+│   ├── script.js      # JavaScript functionality
+│   └── style.css      # Styling and animations
 ├── templates/         # HTML templates
-│   └── index.html
+│   └── index.html     # Main application interface
+├── pocketflow/        # PocketFlow library code 
+├── pocketflow_logic/  # Core application logic
+│   ├── flow.py        # PocketFlow Flow definition
+│   ├── nodes.py       # PocketFlow Node definitions
+│   └── utils/         # Helper modules
+│       ├── file_handler.py  # File operations
+│       ├── llm_caller.py    # Perplexity API interactions
+│       └── github_utils.py  # GitHub API interactions
 ├── requirements.txt   # Python dependencies
-├── .env.example       # Environment variable template
-└── .gitignore
+└── .env.example       # Environment variable template
 ```
 
-## Setup and Installation
+## 🧑‍💻 Development Notes
 
-1.  **Prerequisites:**
-    *   Python 3.8+
-    *   `pip` and `venv`
-    *   **Redis Server:** Required for Flask-SSE live updates. Install locally or use Docker.
-        *   *Docker (Recommended):* `docker run -d -p 6379:6379 --name pocket-summarizer-redis redis`
-        *   *Windows:* Download from [microsoftarchive/redis](https://github.com/microsoftarchive/redis/releases) and run `redis-server.exe`.
-        *   *macOS:* `brew install redis && brew services start redis`
-        *   *Linux:* `sudo apt update && sudo apt install redis-server`
+- **For Production:** Replace the Flask development server with Gunicorn
+- **Error Handling:** The application includes comprehensive error handling for API failures, invalid inputs, and other edge cases
+- **Session Management:** Uses Flask-Session with filesystem backend
+- **Background Tasks:** Uses Python's threading module (consider Celery for production)
 
-2.  **Clone the Repository:**
-    ```bash
-    git clone <repository-url>
-    cd pocket-summarizer # Or your project directory name
-    ```
+## 🌟 Acknowledgements
 
-3.  **Create and Activate Virtual Environment:**
-    ```bash
-    python3 -m venv venv
-    source venv/bin/activate  # Linux/macOS
-    # venv\Scripts\activate    # Windows
-    ```
-
-4.  **Install Dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
-    *(Note: This now includes the `requests` library)*
-
-5.  **Configure Environment Variables:**
-    *   Copy `.env.example` to `.env`: `cp .env.example .env`
-    *   Edit the `.env` file:
-        *   Add your **Perplexity AI API Key** to `PERPLEXITY_API_KEY`. Get one from [Perplexity Labs](https://docs.perplexity.ai/).
-        *   Generate a strong, random **Flask Secret Key** and add it to `FLASK_SECRET_KEY`. You can generate one using:
-            ```bash
-            python -c 'import secrets; print(secrets.token_hex(24))'
-            ```
-        *   (Optional) If your Redis server is not running on `redis://localhost:6379/0`, set the correct `REDIS_URL`.
-
-## Running the Application
-
-1.  **Ensure Redis is running.**
-2.  **Activate your virtual environment** (`source venv/bin/activate`).
-3.  **Start the Flask Development Server:**
-    ```bash
-    flask run
-    # OR
-    python app.py # Use python, not python3 if python maps to Python 3
-    ```
-4.  Open your web browser and navigate to `http://127.0.0.1:5000` (or the address provided).
-
-**Note on Production:** The default Flask development server is not suitable for production. Use a production-ready WSGI server like Gunicorn: `gunicorn -w 4 app:app`. You would also likely want a more robust Redis setup and potentially replace `threading` with Celery/RQ.
-
-## Using the Features
-
-*   **Summarizer:**
-    1.  Drag & drop `.txt` or `.md` files onto the designated area, or use the "Browse Files" button.
-    2.  Select the desired summary detail level ("Short", "Medium", "Comprehensive").
-    3.  Click "Summarize Files".
-    4.  Wait for the processing indicator and live status updates.
-    5.  View the result in Rendered or Raw Text format. Use the Copy/Download buttons as needed.
-*   **Story Generator:**
-    1.  Paste the full HTTPS URL of a **public** GitHub repository into the "GitHub Repository URL" field (e.g., `https://github.com/your-username/your-repo`).
-    2.  Click "Generate Story".
-    3.  Wait for the processing indicator and live status updates (fetching commits, generating story).
-    4.  View the generated fictional story. Use the Copy button if desired.
-
-## Limitations (Hackathon Scope)
-
-*   **Result Storage:** Uses a simple in-memory Python dictionary (`task_results`) which is not persistent and not suitable for multiple concurrent users or production loads. Results are lost on server restart.
-*   **Background Tasks:** Uses basic Python `threading`, which has limitations compared to dedicated task queues (e.g., error handling, scalability).
-*   **Temporary File Cleanup:** Summarizer relies on the background thread for temp file cleanup; if the app crashes mid-process, files might remain. Story generator does not create temp files.
-*   **GitHub API Limits:** Story generator uses unauthenticated requests to the GitHub API, which are subject to stricter rate limits. Heavy use may result in temporary blocks. Only public repositories are supported.
-*   **Markdown Sanitization:** Uses basic Markdown rendering; for enhanced security against potential LLM output issues, HTML sanitization (e.g., with `bleach`) could be added.
+- Built during the Bearhacks hackathon
+- Uses the [Perplexity AI API](https://docs.perplexity.ai/)
+- Uses [Pocketflow](https://github.com/The-Pocket/PocketFlow/)
