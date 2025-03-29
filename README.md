@@ -1,9 +1,8 @@
-# 🐻 Pocket Summarizer & Storyteller
+# 🐻 Pocket Summarizer
 
-A polished web application built with Flask that offers two powerful AI-powered tools in one interface:
+A polished web application built with Flask that offers powerful AI-powered tools in one interface:
 
-1. **File Summarizer** - Upload multiple text files and get a concise AI-generated summary
-2. **GitHub Storyteller** - Transform any public GitHub repository's commit history into an entertaining fictional narrative
+**File Summarizer** - Upload multiple text files and get a concise AI-generated summary
 
 Both tools leverage the Perplexity AI API (using Llama 3 models) to generate high-quality, readable content.
 
