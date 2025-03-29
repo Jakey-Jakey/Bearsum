@@ -191,7 +191,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!fileListDisplay) return;
         fileListDisplay.innerHTML = '';
         if (!files || files.length === 0) {
-            fileListDisplay.innerHTML = '<p><em>No files selected. Drag & drop or browse.</em></p>';
+            fileListDisplay.innerHTML = '<p><em>No files selected.</em></p>';
             return;
         }
 
