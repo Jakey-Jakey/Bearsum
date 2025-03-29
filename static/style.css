@@ -540,3 +540,754 @@ p.latest-status-message {
   .summary-view-wrapper { transition: none; } /* Disable height transition */
   #summary-rendered, #summary-raw { transition: none; } /* Disable view transition */
 }
+
+/* --- Tab Navigation --- */
+.tab-navigation {
+    display: flex;
+    margin-bottom: 2em;
+    border-bottom: 2px solid var(--color-border-medium);
+    gap: 0.5em;
+}
+
+.tab-button {
+    padding: 12px 20px;
+    background-color: var(--color-bg-subtle);
+    border: none;
+    border-radius: var(--border-radius) var(--border-radius) 0 0;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition: all var(--transition-speed) var(--transition-easing);
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px; /* Align with bottom border */
+    position: relative; /* For the active indicator */
+}
+
+.tab-button:hover {
+    background-color: var(--color-bg-light);
+    color: var(--color-text-dark);
+}
+
+.tab-button.active {
+    background-color: var(--color-accent-primary);
+    color: var(--color-text-dark);
+    border-bottom-color: var(--color-accent-strong);
+}
+
+.tab-content {
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.tab-content.hidden {
+    display: none;
+}
+
+/* --- Tab Content Animations --- */
+@keyframes tabFadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes tabFadeOut {
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(-20px); }
+}
+
+.tab-fade-in {
+    animation: tabFadeIn 0.3s ease forwards;
+}
+
+.tab-fade-out {
+    animation: tabFadeOut 0.3s ease forwards;
+}
+
+/* --- Bear Toggle Easter Egg --- */
+.bear-toggle {
+    position: absolute;
+    top: 0.5em;
+    right: 0em;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 2.2em; /* Bigger bear */
+    transition: transform 0.3s cubic-bezier(0.68, -0.55, 0.27, 1.55); /* Bouncier animation */
+    line-height: 1;
+    padding: 8px;
+    border-radius: 50%;
+    background-color: rgba(255, 255, 255, 0.3);
+    z-index: 10; /* Ensure it's above other elements */
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    position: relative; /* Ensure relative positioning for tooltip */
+}
+
+.bear-toggle:hover {
+    transform: scale(1.15) rotate(5deg); /* More noticeable hover effect */
+    background-color: rgba(255, 255, 255, 0.5);
+}
+
+.bear-icon {
+    display: inline-block;
+    transition: all 0.3s ease;
+}
+
+.bear-toggle::after {
+    content: 'Psst... click me!';
+    position: absolute;
+    bottom: -30px;
+    right: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 5px;
+    font-size: 0.5em;
+    white-space: nowrap;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    pointer-events: none;
+}
+
+.bear-toggle:hover::after {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* Once clicked once, hide the tooltip in future sessions */
+body.bear-tooltip-seen .bear-toggle::after {
+    display: none;
+}
+
+/* Bear activation animation */
+@keyframes bearActivate {
+    0% { transform: scale(1) rotate(0); }
+    25% { transform: scale(1.3) rotate(-15deg); }
+    50% { transform: scale(1.2) rotate(15deg); }
+    75% { transform: scale(1.3) rotate(-10deg); }
+    100% { transform: scale(1) rotate(0); }
+}
+
+@keyframes bearDeactivate {
+    0% { transform: scale(1) rotate(0); }
+    25% { transform: scale(1.3) rotate(15deg); }
+    50% { transform: scale(1.2) rotate(-15deg); }
+    75% { transform: scale(1.3) rotate(10deg); }
+    100% { transform: scale(1) rotate(0); }
+}
+
+.bear-activated .bear-icon {
+    animation: bearActivate 1s forwards;
+}
+
+.bear-deactivated .bear-icon {
+    animation: bearDeactivate 1s forwards;
+}
+
+/* --- New Task Button --- */
+.btn-new-task {
+    display: block;
+    margin: 2em auto;
+    padding: 12px 24px;
+    background: linear-gradient(135deg, var(--color-text-secondary) 0%, var(--color-text-primary) 100%);
+    color: white;
+    border: none;
+    border-radius: var(--border-radius);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+    box-shadow: var(--box-shadow-light);
+    text-align: center;
+}
+
+.btn-new-task:hover {
+    transform: translateY(-3px) scale(1.05);
+    box-shadow: var(--box-shadow-medium);
+}
+
+.btn-new-task:active {
+    transform: translateY(1px) scale(0.98);
+    box-shadow: var(--box-shadow-light);
+}
+
+.btn-new-task.hidden {
+    display: none;
+}
+
+/* --- Dark Theme Variables --- */
+:root {
+    /* Keep existing variables */
+    
+    /* Dark Theme Variables */
+    --dark-color-bg: #1A1A1A;
+    --dark-color-surface: #242424;
+    --dark-color-text-primary: #E6E6E6;
+    --dark-color-text-secondary: #BBBBBB;
+    --dark-color-text-dark: #FFFFFF;
+    --dark-color-accent-primary: #FFC107; /* Keep amber as accent */
+    --dark-color-accent-secondary: #FFA000;
+    --dark-color-accent-strong: #FF8F00;
+    --dark-color-border-light: #444444;
+    --dark-color-border-medium: #666666;
+    --dark-color-border-dark: #888888;
+    --dark-color-bg-light: #333333;
+    --dark-color-bg-subtle: #2A2A2A;
+    --dark-color-success-bg: #1B5E20;
+    --dark-color-success-text: #A5D6A7;
+    --dark-color-success-border: #388E3C;
+    --dark-color-error-bg: #B71C1C;
+    --dark-color-error-text: #EF9A9A;
+    --dark-color-error-border: #D32F2F;
+    --dark-color-warning-bg: #E65100;
+    --dark-color-warning-text: #FFCC80;
+    --dark-color-warning-border: #EF6C00;
+}
+
+/* --- Dark Theme Implementation --- */
+body.dark-theme {
+    background-color: var(--dark-color-bg);
+    color: var(--dark-color-text-primary);
+}
+
+/* Override background pattern for dark theme */
+body.dark-theme {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='23' viewBox='0 0 20 23'%3E%3Cg fill='%23FFA000' fill-opacity='0.05'%3E%3Cpath d='M10 0l10 5.77v11.54L10 23 0 17.31V5.77z'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* Storyteller tab specific dark theme */
+body.dark-theme #storyteller-tab {
+    /* Extra dark theme styling specifically for storyteller tab */
+    --color-bg: var(--dark-color-bg);
+    --color-surface: var(--dark-color-surface);
+    --color-text-primary: var(--dark-color-text-primary);
+    --color-text-secondary: var(--dark-color-text-secondary);
+    --color-text-dark: var(--dark-color-text-dark);
+    --color-border-light: var(--dark-color-border-light);
+    --color-border-medium: var(--dark-color-border-medium);
+    --color-border-dark: var(--dark-color-border-dark);
+    --color-bg-light: var(--dark-color-bg-light);
+    --color-bg-subtle: var(--dark-color-bg-subtle);
+}
+
+/* Container and card styling for dark theme */
+body.dark-theme .container {
+    background-color: var(--dark-color-surface);
+    box-shadow: var(--box-shadow-medium);
+}
+
+body.dark-theme .app-header {
+    background: linear-gradient(135deg, #8B5A00 0%, #FF8F00 100%);
+    color: white;
+    border-bottom-color: #FFA000;
+}
+
+body.dark-theme h1, 
+body.dark-theme h2, 
+body.dark-theme h3, 
+body.dark-theme h4 {
+    color: var(--dark-color-text-dark);
+}
+
+body.dark-theme a {
+    color: var(--dark-color-accent-primary);
+}
+
+body.dark-theme a:hover {
+    color: var(--dark-color-accent-secondary);
+}
+
+/* Form elements in dark theme */
+body.dark-theme .drop-zone {
+    border-color: var(--dark-color-border-medium);
+    background-color: var(--dark-color-bg-subtle);
+}
+
+body.dark-theme .drop-zone p {
+    color: var(--dark-color-text-secondary);
+}
+
+body.dark-theme .drop-zone.dragover {
+    background-color: var(--dark-color-bg-light);
+    border-color: var(--dark-color-accent-strong);
+}
+
+body.dark-theme .btn-browse {
+    background-color: var(--dark-color-surface);
+    color: var(--dark-color-accent-primary);
+    border-color: var(--dark-color-accent-secondary);
+}
+
+body.dark-theme .btn-browse:hover {
+    background-color: var(--dark-color-bg-light);
+    color: var(--dark-color-text-dark);
+    border-color: var(--dark-color-accent-strong);
+}
+
+body.dark-theme .file-list-display {
+    background-color: var(--dark-color-surface);
+    border-color: var(--dark-color-border-light);
+}
+
+body.dark-theme .file-list-display .file-size {
+    color: var(--dark-color-text-secondary);
+}
+
+body.dark-theme .file-info {
+    background-color: var(--dark-color-bg-light);
+    border-left-color: var(--dark-color-accent-primary);
+    color: var(--dark-color-text-secondary);
+}
+
+/* Ghost buttons in dark theme */
+body.dark-theme .radio-group.ghost-buttons span {
+    border-color: var(--dark-color-border-medium);
+    background-color: var(--dark-color-surface);
+    color: var(--dark-color-text-secondary);
+}
+
+body.dark-theme .radio-group.ghost-buttons label:hover span {
+    border-color: var(--dark-color-accent-secondary);
+    background-color: var(--dark-color-bg-light);
+    color: var(--dark-color-text-dark);
+}
+
+body.dark-theme .radio-group.ghost-buttons input[type="radio"]:checked + span {
+    background: linear-gradient(135deg, var(--dark-color-accent-primary) 0%, var(--dark-color-accent-secondary) 100%);
+    border-color: var(--dark-color-accent-strong);
+    color: var(--dark-color-text-dark);
+}
+
+/* Submit buttons in dark theme */
+body.dark-theme .btn-submit {
+    background: linear-gradient(135deg, var(--dark-color-accent-strong) 0%, var(--dark-color-accent-secondary) 100%);
+}
+
+body.dark-theme #submit-button-story {
+    background: linear-gradient(135deg, var(--dark-color-text-secondary) 0%, var(--dark-color-text-primary) 100%);
+}
+
+/* Processing indicator in dark theme */
+body.dark-theme .processing-indicator {
+    background-color: var(--dark-color-bg-light);
+    border-color: var(--dark-color-border-light);
+}
+
+body.dark-theme .live-status-area {
+    background-color: var(--dark-color-surface);
+    border-color: var(--dark-color-border-medium);
+}
+
+body.dark-theme .live-status-area h4 {
+    color: var(--dark-color-text-secondary);
+}
+
+body.dark-theme p.latest-status-message {
+    color: var(--dark-color-text-primary);
+}
+
+/* Results area in dark theme */
+body.dark-theme .results-container {
+    border-top-color: var(--dark-color-border-light);
+}
+
+body.dark-theme .results-area {
+    border-bottom-color: var(--dark-color-border-medium);
+}
+
+body.dark-theme .results-area h2 {
+    border-bottom-color: var(--dark-color-accent-primary);
+}
+
+body.dark-theme .view-toggle {
+    border-bottom-color: var(--dark-color-border-medium);
+}
+
+body.dark-theme .btn-toggle {
+    color: var(--dark-color-text-secondary);
+}
+
+body.dark-theme .btn-toggle.active {
+    color: var(--dark-color-accent-primary);
+    border-bottom-color: var(--dark-color-accent-primary);
+}
+
+body.dark-theme .btn-toggle:hover:not(.active) {
+    background-color: var(--dark-color-bg-subtle);
+    color: var(--dark-color-text-dark);
+    border-bottom-color: var(--dark-color-border-light);
+}
+
+/* Summary/Story content in dark theme */
+body.dark-theme .summary-rendered {
+    color: var(--dark-color-text-primary);
+    border-color: var(--dark-color-border-medium);
+    background-color: var(--dark-color-surface);
+}
+
+body.dark-theme .summary-rendered h1, 
+body.dark-theme .summary-rendered h2, 
+body.dark-theme .summary-rendered h3, 
+body.dark-theme .summary-rendered h4 {
+    color: var(--dark-color-text-dark);
+    border-bottom-color: var(--dark-color-border-light);
+}
+
+body.dark-theme .summary-rendered code {
+    background-color: var(--dark-color-bg-light);
+    color: #FFA726; /* Lighter orange for code */
+    border-color: var(--dark-color-border-light);
+}
+
+body.dark-theme .summary-rendered pre {
+    background-color: var(--dark-color-bg-subtle);
+    border-color: var(--dark-color-border-medium);
+}
+
+body.dark-theme .summary-rendered blockquote {
+    border-left-color: var(--dark-color-accent-primary);
+    color: var(--dark-color-text-secondary);
+    background-color: var(--dark-color-bg-light);
+}
+
+body.dark-theme .summary-raw pre {
+    background-color: var(--dark-color-bg-subtle);
+    border-color: var(--dark-color-border-medium);
+    color: var(--dark-color-text-dark);
+}
+
+/* Action buttons in dark theme */
+body.dark-theme .btn-copy {
+    background-color: var(--dark-color-text-secondary);
+    color: var(--dark-color-bg);
+}
+
+body.dark-theme .btn-copy:hover {
+    background-color: var(--dark-color-text-dark);
+}
+
+body.dark-theme .btn-download {
+    background-color: var(--dark-color-border-dark);
+    color: var(--dark-color-bg);
+}
+
+body.dark-theme .btn-download:hover {
+    background-color: var(--dark-color-text-secondary);
+}
+
+/* Tab navigation in dark theme */
+body.dark-theme .tab-button {
+    background-color: var(--dark-color-bg-subtle);
+    color: var(--dark-color-text-secondary);
+}
+
+body.dark-theme .tab-button:hover {
+    background-color: var(--dark-color-bg-light);
+    color: var(--dark-color-text-dark);
+}
+
+body.dark-theme .tab-button.active {
+    background-color: var(--dark-color-accent-primary);
+    color: var(--dark-color-text-dark);
+    border-bottom-color: var(--dark-color-accent-strong);
+}
+
+/* New task button in dark theme */
+body.dark-theme .btn-new-task {
+    background: linear-gradient(135deg, var(--dark-color-text-secondary) 0%, var(--dark-color-text-primary) 100%);
+    color: var(--dark-color-bg);
+}
+
+/* Fix form inputs for dark theme */
+body.dark-theme .form-control {
+    background-color: var(--dark-color-surface);
+    border-color: var(--dark-color-border-medium);
+    color: var(--dark-color-text-primary);
+}
+
+body.dark-theme .form-control:focus {
+    border-color: var(--dark-color-accent-primary);
+    box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.2);
+}
+
+/* Theme toggle appearance in dark theme */
+body.dark-theme .bear-toggle {
+    background-color: rgba(0, 0, 0, 0.3);
+}
+
+body.dark-theme .bear-toggle:hover {
+    background-color: rgba(0, 0, 0, 0.5);
+}
+
+/* Special storyteller mode styling */
+body.storyteller-mode .app-header {
+    background: linear-gradient(135deg, #663300 0%, #996633 100%);
+    box-shadow: 0 4px 20px rgba(102, 51, 0, 0.3);
+}
+
+body.storyteller-mode .bear-toggle {
+    background-color: rgba(0, 0, 0, 0.4);
+    box-shadow: 0 2px 10px rgba(255, 193, 7, 0.3);
+}
+
+body.storyteller-mode .bear-toggle:hover {
+    background-color: rgba(0, 0, 0, 0.6);
+}
+
+body.storyteller-mode .container {
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--dark-color-border-medium);
+}
+
+/* Story result animation */
+body.storyteller-mode .story-section h2 {
+    position: relative;
+    display: inline-block;
+}
+
+body.storyteller-mode .story-section h2::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 0;
+    width: 100%;
+    height: 3px;
+    background: linear-gradient(90deg, var(--dark-color-accent-primary), transparent);
+    animation: storyTitleShine 3s ease-in-out infinite;
+}
+
+@keyframes storyTitleShine {
+    0% { background-position: -100px; }
+    50% { background-position: 200px; }
+    100% { background-position: -100px; }
+}
+
+/* Enhanced Animations for Elements */
+
+/* Buttons */
+.btn {
+    transition: all 0.3s cubic-bezier(0.68, -0.55, 0.27, 1.55) !important; /* Bouncier buttons */
+}
+
+.btn:hover {
+    transform: translateY(-4px) scale(1.03) !important; /* More pronounced hover */
+    box-shadow: 0 6px 15px rgba(0, 0, 0, 0.15) !important;
+}
+
+.btn:active {
+    transform: translateY(2px) scale(0.98) !important; /* More noticeable click */
+}
+
+/* Animated indicator for active tab */
+.tab-button.active::after {
+    content: '';
+    display: block;
+    position: absolute;
+    bottom: -2px;
+    left: 50%;
+    width: 0;
+    height: 3px;
+    background-color: var(--color-accent-strong);
+    transition: width 0.3s ease, left 0.3s ease;
+    animation: tabActivate 0.3s forwards;
+}
+
+@keyframes tabActivate {
+    from { width: 0; left: 50%; }
+    to { width: 100%; left: 0; }
+}
+
+/* Processing spinner enhancement */
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    50% { transform: rotate(180deg) scale(1.1); } /* Add scale for more dynamic spin */
+    100% { transform: rotate(360deg); }
+}
+
+/* Add fancy animation to drop zone */
+.drop-zone {
+    transition: all 0.4s cubic-bezier(0.68, -0.55, 0.27, 1.55) !important;
+    position: relative;
+    overflow: hidden;
+}
+
+.drop-zone::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0) 70%);
+    transform: rotate(0deg);
+    opacity: 0;
+    transition: opacity 0.8s ease, transform 0.8s ease;
+    pointer-events: none;
+}
+
+.drop-zone:hover::before {
+    opacity: 0.4;
+    transform: rotate(180deg);
+}
+
+.drop-zone.dragover::before {
+    opacity: 0.6;
+    transform: rotate(45deg);
+}
+
+/* Status message animation enhancement */
+@keyframes fadeInStatus {
+    from {
+        opacity: 0;
+        transform: translateY(10px) scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Enhance ghost button animations */
+.radio-group.ghost-buttons span {
+    transition: all 0.3s cubic-bezier(0.68, -0.55, 0.27, 1.55) !important;
+}
+
+.radio-group.ghost-buttons label:hover span {
+    transform: translateY(-3px);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+.radio-group.ghost-buttons input[type="radio"]:checked + span {
+    animation: selectedOption 0.4s cubic-bezier(0.68, -0.55, 0.27, 1.55) forwards;
+}
+
+@keyframes selectedOption {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}
+
+/* Input field focus animations */
+.form-control:focus {
+    animation: inputFocus 0.3s ease-out forwards;
+}
+
+@keyframes inputFocus {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.02); }
+    100% { transform: scale(1); }
+}
+
+/* Results section appear animation */
+.results-container-wrapper:not(.hidden) {
+    animation: resultsAppear 0.5s ease-out forwards;
+}
+
+@keyframes resultsAppear {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* New task button animations */
+.btn-new-task:not(.hidden) {
+    animation: newTaskAppear 0.5s ease-out forwards;
+}
+
+@keyframes newTaskAppear {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Ensure dark theme transitions are smooth */
+body.dark-theme,
+body.dark-theme * {
+    transition-property: background-color, color, border-color, box-shadow, transform, opacity;
+    transition-duration: 0.3s;
+    transition-timing-function: ease;
+}
+
+/* Dark theme toggle animation */
+body:not(.dark-theme) .bear-toggle,
+body.dark-theme .bear-toggle {
+    transition: all 0.5s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+}
+
+/* Accessibility: Respect Reduced Motion Preference */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+    
+    .bear-toggle:hover {
+        transform: none !important;
+    }
+    
+    .btn:hover, 
+    .btn:active {
+        transform: none !important;
+    }
+    
+    .drop-zone::before {
+        display: none !important;
+    }
+    
+    .radio-group.ghost-buttons input[type="radio"]:checked + span {
+        animation: none !important;
+    }
+    
+    body.storyteller-mode .story-section h2::after {
+        animation: none !important;
+    }
+}
+/* Fix the text color in dark mode for the processing task name */
+body.dark-theme #processing-task-name {
+    color: var(--dark-color-text-primary);
+}
+
+/* Style for the tooltip reset indicator */
+.tooltip-reset-indicator {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background-color: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 10px 15px;
+    border-radius: 5px;
+    z-index: 9999;
+    animation: fadeInOut 2s ease-in-out forwards;
+    font-size: 14px;
+}
+
+.tooltip-reset-ready::after {
+    content: 'Press refresh now to reset bear tooltip';
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    background-color: var(--color-accent-primary);
+    color: var(--color-text-dark);
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    z-index: 9999;
+}
+
+@keyframes fadeInOut {
+    0% { opacity: 0; transform: translateY(20px); }
+    20% { opacity: 1; transform: translateY(0); }
+    80% { opacity: 1; transform: translateY(0); }
+    100% { opacity: 0; transform: translateY(-20px); }
+}
