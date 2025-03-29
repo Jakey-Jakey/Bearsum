@@ -94,16 +94,26 @@ a:hover { color: var(--color-accent-secondary); text-decoration: underline; }
 .app-header h1 { margin: 0; font-weight: 700; text-shadow: 1px 1px 2px rgba(0,0,0,0.1); }
 .theme-accent { font-weight: 400; font-size: 0.8em; color: var(--color-text-primary); display: block; margin-top: 0.2em; }
 
-.upload-section{
+.upload-section, .story-section {
     margin-bottom: 3em; /* Consistent larger spacing */
+    padding-bottom: 2em; /* Add padding below section */
+    border-bottom: 1px solid var(--color-border-medium); /* Separator line */
 }
+.upload-section:last-of-type, .story-section:last-of-type {
+     border-bottom: none; /* No border for the last section */
+     margin-bottom: 0; /* Adjust margin if needed */
+}
+
 
 /* --- Utility --- */
 .visually-hidden { /* Hides element visually but keeps accessible */
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
 }
-.hidden { display: none !important; } /* Keep using display:none for JS logic, handle transition separately */
+/* Use JS to add/remove this class for visibility control */
+.hidden {
+    display: none !important;
+}
 
 
 /* --- Flash Messages --- */
@@ -127,6 +137,20 @@ a:hover { color: var(--color-accent-secondary); text-decoration: underline; }
 .upload-form label:not(.ghost-buttons label) {
     display: block; margin-bottom: 0.6em; font-weight: 600; color: var(--color-text-dark); font-size: 1.05em; /* Slightly larger labels */
 }
+
+/* Basic form control style */
+.form-control {
+    width: 100%; padding: 12px 15px; border-radius: var(--border-radius);
+    border: 1px solid var(--color-border-medium); font-size: 1rem;
+    box-sizing: border-box; /* Include padding in width */
+    transition: border-color var(--transition-speed) ease-in-out, box-shadow var(--transition-speed) ease-in-out;
+}
+.form-control:focus {
+    border-color: var(--color-accent-primary);
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.3); /* Focus ring */
+}
+
 
 .drop-zone {
     border: 3px dashed var(--color-border-medium);
@@ -249,6 +273,15 @@ a:hover { color: var(--color-accent-secondary); text-decoration: underline; }
 }
 .btn-submit:hover { background: linear-gradient(135deg, var(--color-accent-secondary) 0%, var(--color-accent-strong) 100%); }
 
+/* Specific style for story button */
+#submit-button-story {
+     background: linear-gradient(135deg, var(--color-text-secondary) 0%, var(--color-text-primary) 100%);
+}
+#submit-button-story:hover {
+     background: linear-gradient(135deg, var(--color-text-primary) 0%, var(--color-text-secondary) 100%);
+}
+
+
 .btn-copy { background-color: var(--color-text-secondary); color: white; }
 .btn-copy:hover { background-color: var(--color-text-dark); }
 
@@ -257,43 +290,46 @@ a:hover { color: var(--color-accent-secondary); text-decoration: underline; }
 
 .action-buttons { margin-top: 2em; display: flex; gap: 1.2em; flex-wrap: wrap; }
 
-/* --- Section Visibility Transition --- */
-/* Apply base transition properties to elements that will fade/slide */
-/* Use a wrapper or apply directly if structure allows */
+/* --- Section Visibility Transition (SIMPLIFIED) --- */
 .processing-indicator-wrapper,
 .results-container-wrapper {
     transition: opacity var(--transition-speed) var(--transition-easing),
                 transform var(--transition-speed) var(--transition-easing),
-                max-height 0.4s ease-in-out; /* Transition max-height */
+                visibility 0s linear var(--transition-speed); /* Hide visibility after transition */
+                /* Removed max-height transition */
     opacity: 1;
     transform: translateY(0);
-    overflow: hidden; /* Hide content when collapsing */
-    max-height: 1000px; /* Set a large max-height */
+    overflow: visible; /* Allow content visibility during fade */
+    visibility: visible;
 }
 
-/* Define the hidden state */
+/* Define the hidden state (SIMPLIFIED) */
 .processing-indicator-wrapper.hidden,
 .results-container-wrapper.hidden {
     opacity: 0;
-    transform: translateY(10px); /* Smaller translate */
+    transform: translateY(15px); /* Keep slight translate */
     pointer-events: none;
-    max-height: 0; /* Collapse height */
-    margin-top: 0 !important; /* Remove margin when hidden */
-    margin-bottom: 0 !important;
-    padding-top: 0 !important;
-    padding-bottom: 0 !important;
-    border: none !important; /* Remove borders if any */
+    visibility: hidden;
+    transition: opacity var(--transition-speed) var(--transition-easing),
+                transform var(--transition-speed) var(--transition-easing),
+                visibility 0s linear 0s; /* Make invisible immediately */
+    /* Remove max-height, margin, padding, border overrides - rely on display:none equivalent via visibility */
+    height: 0; /* Still useful to collapse space */
+    overflow: hidden; /* Prevent content spill */
+    margin: 0 !important; /* Ensure margin collapses */
+    padding: 0 !important; /* Ensure padding collapses */
+    border: none !important; /* Ensure border collapses */
 }
+
 
 /* --- Processing Indicator (Refined) --- */
 .processing-indicator {
-    margin-top: 2.5em; padding: 2.5em; background-color: var(--color-bg-light);
+    /* Removed margin-top/bottom here, handled by wrapper */
+    padding: 2.5em; background-color: var(--color-bg-light);
     border: 1px solid var(--color-border-light); border-radius: var(--border-radius);
     text-align: center; display: flex; flex-direction: column; align-items: center; gap: 1.5em;
     box-shadow: var(--box-shadow-medium);
-    margin-bottom: 3em; /* Ensure spacing */
 }
-/* .processing-indicator.hidden { display: none !important; } */ /* JS will handle wrapper */
 
 .spinner {
     border: 8px solid var(--color-border-light); /* Thicker border */
@@ -311,7 +347,7 @@ a:hover { color: var(--color-accent-secondary); text-decoration: underline; }
     50% { border-color: var(--color-accent-primary); }
 }
 
-.processing-indicator p { margin: 0; font-size: 1.3em; color: var(--color-text-dark); font-weight: 600; }
+.processing-indicator p#processing-task-name { margin: 0; font-size: 1.3em; color: var(--color-text-dark); font-weight: 600; }
 
 /* Live Status Area - Animation for new messages */
 .live-status-area {
@@ -323,8 +359,6 @@ a:hover { color: var(--color-accent-secondary); text-decoration: underline; }
 .live-status-area h4 { margin-top: 0; margin-bottom: 0.6em; font-size: 1em; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
 p.latest-status-message {
     margin: 0; font-size: 1.05em; color: var(--color-text-primary); min-height: 1.4em; line-height: 1.5; font-weight: 600;
-    /* Add transition for smooth text change (optional) */
-    /* transition: color 0.3s ease; */
 }
 
 @keyframes fadeInStatus {
@@ -345,12 +379,21 @@ p.latest-status-message {
 
 /* --- Results Area (Refined Transitions) --- */
 .results-container {
-    margin-top: 3em; padding-top: 2.5em;
+     /* Removed margin-top/bottom here, handled by wrapper */
+    padding-top: 2.5em;
     border-top: 2px solid var(--color-border-light); /* Thicker border */
     display: flex; flex-direction: column; gap: 3em;
-    margin-bottom: 3em; /* Ensure spacing */
 }
-/* .results-container.hidden { display: none !important; } */ /* JS will handle wrapper */
+
+.results-area { /* Style individual result sections */
+     padding-bottom: 2em;
+     border-bottom: 1px dashed var(--color-border-medium);
+}
+.results-area:last-child {
+     border-bottom: none;
+     padding-bottom: 0;
+}
+
 
 .results-area h2 {
     margin-top: 0; margin-bottom: 1.2em; color: var(--color-text-dark);
@@ -386,34 +429,46 @@ p.latest-status-message {
 /* View Toggle Transition */
 #summary-rendered,
 #summary-raw {
-    transition: opacity 0.3s var(--transition-easing), visibility 0.3s var(--transition-easing);
-    /* Remove height/overflow transitions - rely on parent container */
+    transition: opacity 0.3s var(--transition-easing), visibility 0.3s linear; /* Use linear for visibility */
+    /* Ensure these are not hidden by default if they contain results */
+    opacity: 1;
+    visibility: visible;
+    position: relative; /* Change back to relative if absolute causes issues */
+    width: 100%;
+    box-sizing: border-box;
 }
 
 #summary-rendered.hidden,
 #summary-raw.hidden {
     opacity: 0;
     visibility: hidden; /* Use visibility for transition */
-    position: absolute; /* Allow overlap for cross-fade */
-    width: calc(100% - 4em); /* Adjust based on parent padding */
+    /* position: absolute; */ /* Temporarily disable absolute positioning */
+    /* width: calc(100% - 6em); */
+    /* left: 3em; */
     pointer-events: none;
+    height: 0; /* Collapse height when hidden */
+    overflow: hidden; /* Hide content */
+    margin: 0;
+    padding: 0;
+    border: none;
 }
 
-/* Wrapper to manage height for absolute positioned children */
+/* Wrapper to manage height for view toggle */
 .summary-view-wrapper {
     position: relative;
     min-height: 100px; /* Estimate minimum height or calculate dynamically */
     transition: min-height 0.3s ease-in-out; /* Animate height change */
+    margin-bottom: 1em; /* Add space below wrapper */
+    overflow: hidden; /* Hide overflowing absolute children if used */
 }
 
 
 /* Rendered/Raw Views Styling */
-.summary-rendered {
+.summary-rendered { /* Applies to both summary and story rendered views */
     line-height: 1.8; /* More spacing */
     color: var(--color-text-primary); padding: 1.5em 2em; /* More padding */
     border: 1px solid var(--color-border-medium); border-radius: var(--border-radius);
     background-color: var(--color-surface); box-shadow: var(--box-shadow-light);
-    /* Remove position:absolute if using wrapper */
 }
 .summary-rendered h1, .summary-rendered h2, .summary-rendered h3, .summary-rendered h4 {
     color: var(--color-text-dark); margin-top: 1.5em; margin-bottom: 0.8em;
@@ -440,9 +495,6 @@ p.latest-status-message {
     padding-top: 0.5em; padding-bottom: 0.5em; border-radius: 0 4px 4px 0;
 }
 
-.summary-raw {
-     /* Remove position:absolute if using wrapper */
-}
 .summary-raw pre {
     white-space: pre-wrap; word-wrap: break-word;
     background-color: var(--color-bg-subtle); padding: 1.5em; /* More padding */
@@ -453,6 +505,7 @@ p.latest-status-message {
     font-size: 1rem; /* Slightly larger raw text */
     line-height: 1.6;
     box-shadow: inset 0 1px 4px rgba(0,0,0,0.04);
+    margin: 0; /* Remove default margin */
 }
 
 /* Final Status Log (if shown - currently removed from HTML, but styled just in case) */
@@ -478,7 +531,11 @@ p.latest-status-message {
   .spinner { animation: none; }
   .drop-zone.dragover, .btn:hover, .btn:active { transform: none; }
   .latest-status-message.animate-new { animation: none; opacity: 1; transform: none; } /* Ensure status visible */
-  .processing-indicator-wrapper.hidden, .results-container-wrapper.hidden { transform: none; opacity: 0; max-height: 0;} /* Ensure hidden state */
+  /* Ensure simplified wrapper transitions are disabled */
+  .processing-indicator-wrapper, .results-container-wrapper { transition: none; }
+  .processing-indicator-wrapper.hidden, .results-container-wrapper.hidden {
+      transform: none; opacity: 0; visibility: hidden; height: 0; margin: 0 !important; padding: 0 !important; border: none !important;/* Ensure hidden state */
+   }
   .file-list-display li { animation: none; opacity: 1; } /* Ensure list items visible */
   .summary-view-wrapper { transition: none; } /* Disable height transition */
   #summary-rendered, #summary-raw { transition: none; } /* Disable view transition */
