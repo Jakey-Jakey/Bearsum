@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pocket Summarizer - Bearhacks Edition</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <header class="app-header">
+        <h1>Pocket Summarizer <span class="theme-accent">(Bearhacks Edition)</span></h1>
+    </header>
+
+    <div class="container">
+
+        <!-- Display Flashed Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <div class="flash-messages">
+              {% for category, message in messages %}
+                <div class="flash flash-{{ category }}">{{ message }}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
+
+        <!-- Display Explicit Error Messages (if passed) -->
+        {% if error_messages %}
+            <div class="error-area flash-messages">
+                <h4>Errors Occurred During Last Process:</h4>
+                {% for error in error_messages %}
+                    <div class="flash flash-error">{{ error }}</div>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+
+        <!-- Upload Form Section -->
+        <section class="upload-section">
+            <h2>Upload Your Files</h2>
+            <p>Drag & drop your notes (.txt, .md) or browse.</p>
+            <div class="file-info">
+                Max files: {{ config.MAX_FILES }}, Max size per file: {{ config.MAX_FILE_SIZE_MB }}MB
+            </div>
+
+            <!-- Add data attributes for JS config -->
+            <form method="post"
+                  enctype="multipart/form-data"
+                  class="upload-form"
+                  id="upload-form"
+                  action="{{ url_for('process_files') }}"
+                  data-max-files="{{ config.MAX_FILES }}"
+                  data-max-file-size-mb="{{ config.MAX_FILE_SIZE_MB }}"
+                  data-is-processing="{{ is_processing | lower }}" {# Pass boolean as string #}
+                  data-task-id="{{ task_id if task_id else '' }}" {# Pass task_id #}
+                  >
+
+                <!-- Hidden Actual File Input -->
+                <input type="file" id="files" name="files" multiple required accept=".txt,.md" class="visually-hidden">
+
+                <!-- Drag and Drop Zone -->
+                <div id="drop-zone" class="drop-zone">
+                    <p>Drag & Drop Files Here</p>
+                    <p>or</p>
+                    <a href="#" id="browse-files-link" class="btn btn-browse">Browse Files</a>
+                </div>
+
+                <!-- File List Display -->
+                <div id="file-list-display" class="file-list-display">
+                    <p><em>No files selected. Drag & drop or browse.</em></p>
+                </div>
+
+                <!-- Summary Level Options (Ghost Button Style) -->
+                <div class="form-group">
+                    <label>Summary Detail Level:</label>
+                    <div class="radio-group ghost-buttons"> {# Added class #}
+                        <label>
+                            <input type="radio" name="summary_level" value="short" class="visually-hidden"> {# Hide input #}
+                            <span>Short</span> {# Wrap text #}
+                        </label>
+                        <label>
+                            <input type="radio" name="summary_level" value="medium" checked class="visually-hidden">
+                            <span>Medium</span>
+                        </label>
+                        <label>
+                            <input type="radio" name="summary_level" value="comprehensive" class="visually-hidden">
+                            <span>Comprehensive</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Submit Button -->
+                <div class="form-group submit-group">
+                    <button type="submit" class="btn btn-submit" id="submit-button">Summarize Files</button>
+                </div>
+            </form>
+        </section>
+
+        <!-- Processing Indicator Section -->
+        <section id="processing-indicator" class="processing-indicator {% if not is_processing %}hidden{% endif %}">
+             <div class="spinner"></div>
+             <p>Processing your files... please wait.</p>
+             <div class="status-log live-status-area" id="live-status-log">
+                 <h4>Live Status:</h4>
+                 <p id="latest-status" class="latest-status-message">Initializing...</p>
+             </div>
+        </section>
+
+        <!-- Results Section -->
+        <section class="results-container {% if is_processing or not (summary_html or summary_raw) %}hidden{% endif %}" id="results-area">
+            {% if summary_html or summary_raw %}
+                <div class="results-area summary-section">
+                    <h2>Summary</h2>
+                    <div class="view-toggle">
+                        <button type="button" class="btn btn-toggle active" data-view="rendered">Rendered View</button>
+                        <button type="button" class="btn btn-toggle" data-view="raw">Raw Text</button>
+                    </div>
+                    <div id="summary-rendered" class="summary-rendered">
+                        {% if summary_html %}{{ summary_html | safe }}{% else %}<p><em>(Could not render summary)</em></p>{% endif %}
+                    </div>
+                    <div id="summary-raw" class="summary-raw hidden">
+                        <pre id="summary-text-raw">{{ summary_raw }}</pre>
+                    </div>
+                    <div class="action-buttons">
+                         <button type="button" id="copy-button" class="btn btn-copy">Copy Raw Text</button>
+                         {# Only show download if raw summary exists and is not an error message #}
+                         {% if summary_raw and not summary_raw.startswith("Error:") %}
+                         <a href="{{ url_for('download_summary') }}" class="btn btn-download">Download Raw (.txt)</a>
+                         {% endif %}
+                    </div>
+                </div>
+            {% endif %}
+            {# Final status log display removed as live status covers it #}
+        </section>
+
+    </div> <!-- /container -->
+
+    <!-- JavaScript -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // --- Element References ---
+            const uploadForm = document.getElementById('upload-form');
+            const submitButton = document.getElementById('submit-button');
+            const processingIndicator = document.getElementById('processing-indicator');
+            const resultsArea = document.getElementById('results-area');
+            const latestStatusElement = document.getElementById('latest-status');
+            const copyButton = document.getElementById('copy-button');
+            const summaryRawTextElement = document.getElementById('summary-text-raw');
+            const viewToggles = document.querySelectorAll('.view-toggle .btn-toggle');
+            const renderedView = document.getElementById('summary-rendered');
+            const rawView = document.getElementById('summary-raw');
+            const fileInput = document.getElementById('files');
+            const dropZone = document.getElementById('drop-zone');
+            const fileListDisplay = document.getElementById('file-list-display');
+            const browseFilesLink = document.getElementById('browse-files-link');
+
+            // --- Config ---
+            const MAX_FILES = parseInt(uploadForm?.dataset.maxFiles || '5');
+            const MAX_FILE_SIZE_MB = parseInt(uploadForm?.dataset.maxFileSizeMb || '1');
+            const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+            const ALLOWED_EXTENSIONS = ['txt', 'md'];
+
+            // --- Initial State from Flask ---
+            const isProcessing = uploadForm?.dataset.isProcessing === 'true';
+            const taskId = uploadForm?.dataset.taskId;
+            let eventSource = null;
+
+            // --- Helper: Update File List Display ---
+            function updateFileList(files) {
+                if (!fileListDisplay) return;
+                fileListDisplay.innerHTML = ''; // Clear previous list
+                if (!files || files.length === 0) {
+                    fileListDisplay.innerHTML = '<p><em>No files selected. Drag & drop or browse.</em></p>';
+                    return;
+                }
+
+                const list = document.createElement('ul');
+                Array.from(files).forEach(file => {
+                    const li = document.createElement('li');
+                    let errorMsg = '';
+                    const fileExt = file.name.split('.').pop()?.toLowerCase() || '';
+                    if (file.size > MAX_FILE_SIZE_BYTES) {
+                        errorMsg = ` <span class="file-error">(Too large: > ${MAX_FILE_SIZE_MB}MB)</span>`;
+                    } else if (!ALLOWED_EXTENSIONS.includes(fileExt)) {
+                         errorMsg = ` <span class="file-error">(Invalid type)</span>`;
+                    }
+
+                    li.innerHTML = `${file.name} <span class="file-size">(${(file.size / 1024).toFixed(1)} KB)</span>${errorMsg}`;
+                    if (errorMsg) li.classList.add('has-error');
+                    list.appendChild(li);
+                });
+                fileListDisplay.appendChild(list);
+
+                if (files.length > MAX_FILES) {
+                     const errorLi = document.createElement('li');
+                     errorLi.innerHTML = `<span class="file-error">Error: Too many files selected (max ${MAX_FILES}).</span>`;
+                     errorLi.classList.add('has-error');
+                     list.appendChild(errorLi);
+                }
+            }
+
+             // --- Helper: Validate Files ---
+             function validateFiles(files) {
+                if (!files || files.length === 0) return false; // No files is invalid for submission
+                if (files.length > MAX_FILES) return false; // Too many files
+
+                for (const file of files) {
+                    const fileExt = file.name.split('.').pop()?.toLowerCase() || '';
+                    if (file.size > MAX_FILE_SIZE_BYTES || !ALLOWED_EXTENSIONS.includes(fileExt)) {
+                        return false; // Individual file error
+                    }
+                }
+                return true; // All checks passed
+            }
+
+            function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
+            function highlight(e) { dropZone?.classList.add('dragover'); }
+            function unhighlight(e) { dropZone?.classList.remove('dragover'); }
+
+            function handleDrop(e) {
+                 const dt = e.dataTransfer;
+                 const files = dt.files;
+                 try {
+                      // Create a new FileList - this is tricky, direct assignment often fails
+                      // Best approach: Use DataTransfer object to set files if possible
+                      // Or, store files in a separate array and handle submission differently (more complex)
+                      // Hacky workaround for some browsers:
+                      // fileInput.files = files; // Try direct assignment first
+                      // If direct assignment fails, we might need hidden inputs per file or FormData manipulation
+
+                      // For now, assume direct assignment works or rely on user selecting via browse after drop
+                      fileInput.files = files;
+
+                      updateFileList(files); // Update UI
+                 } catch (err) {
+                      console.error("Error setting file input files:", err);
+                      alert("There was an error processing the dropped files. Please try the 'browse' link instead.");
+                      updateFileList(null); // Clear list on error
+                 }
+            }
+
+
+            // --- Drag and Drop Logic ---
+            if (dropZone && fileInput && fileListDisplay) {
+                 ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                     dropZone.addEventListener(eventName, preventDefaults, false);
+                     document.body.addEventListener(eventName, preventDefaults, false);
+                 });
+                 ['dragenter', 'dragover'].forEach(eventName => dropZone.addEventListener(eventName, highlight, false));
+                 ['dragleave', 'drop'].forEach(eventName => dropZone.addEventListener(eventName, unhighlight, false));
+                 dropZone.addEventListener('drop', handleDrop, false);
+
+                 if (browseFilesLink) {
+                      browseFilesLink.addEventListener('click', (e) => {
+                          e.preventDefault();
+                          fileInput.click();
+                      });
+                 }
+                 dropZone.addEventListener('click', (event) => {
+                     if (!browseFilesLink || !event.target.isSameNode(browseFilesLink)) {
+                        fileInput.click();
+                     }
+                 });
+
+                 fileInput.addEventListener('change', function() { updateFileList(this.files); });
+                 updateFileList(fileInput.files); // Initial update
+            }
+
+
+            // --- SSE Connection Function ---
+            function connectSSE(taskId) {
+                if (!taskId || !processingIndicator || !resultsArea || !latestStatusElement) return;
+                console.log(`Connecting to SSE stream for task: ${taskId}`);
+                eventSource = new EventSource(`/stream?channel=${taskId}`);
+
+                eventSource.onopen = function() {
+                    console.log("SSE connection opened.");
+                    processingIndicator.classList.remove('hidden');
+                    resultsArea.classList.add('hidden');
+                    latestStatusElement.textContent = 'Connection established... waiting for updates.';
+                    latestStatusElement.style.color = ''; // Reset color
+                };
+
+                eventSource.onmessage = function(event) {
+                     console.log("SSE message received:", event.data);
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'status' && latestStatusElement) {
+                            latestStatusElement.textContent = data.message;
+                        }
+                        if (data.type === 'completed' || data.type === 'error') {
+                            console.log(`Processing ${data.type}. Closing SSE connection and reloading.`);
+                            if (eventSource) { eventSource.close(); eventSource = null; }
+                            latestStatusElement.textContent = `Processing ${data.type}. Reloading results...`;
+                            setTimeout(() => { window.location.reload(); }, 750);
+                        }
+                    } catch (e) {
+                        console.error("Failed to parse SSE message or update UI:", e);
+                         if(latestStatusElement) latestStatusElement.textContent = "Error processing status update.";
+                    }
+                };
+
+                eventSource.onerror = function(err) {
+                    console.error("SSE connection error:", err);
+                    if (latestStatusElement) {
+                         latestStatusElement.textContent = "Status update connection failed. Please refresh manually for results.";
+                         latestStatusElement.style.color = 'var(--color-error-text)';
+                    }
+                    if (eventSource) { eventSource.close(); eventSource = null; }
+                };
+            }
+
+            // --- Initial Page Load Logic ---
+            if (isProcessing && taskId) {
+                connectSSE(taskId);
+            } else {
+                if (processingIndicator) processingIndicator.classList.add('hidden');
+            }
+
+            // --- Form Submission Logic ---
+            if (uploadForm && processingIndicator && resultsArea && fileInput && submitButton) {
+                uploadForm.addEventListener('submit', function(event) {
+                    const files = fileInput.files;
+                    if (!validateFiles(files)) { // Use combined validation
+                         alert("Please select valid files (check type, size, and count) before submitting.");
+                         event.preventDefault(); return;
+                    }
+                    processingIndicator.classList.remove('hidden');
+                    resultsArea.classList.add('hidden');
+                    submitButton.disabled = true;
+                    if (latestStatusElement) latestStatusElement.textContent = 'Submitting files...';
+                });
+            }
+
+            // --- View Toggling Logic ---
+             if (viewToggles.length > 0 && renderedView && rawView) {
+                viewToggles.forEach(button => {
+                    button.addEventListener('click', function() {
+                        const viewToShow = this.getAttribute('data-view');
+                        viewToggles.forEach(btn => btn.classList.remove('active'));
+                        this.classList.add('active');
+                        if (viewToShow === 'rendered') {
+                            renderedView.classList.remove('hidden');
+                            rawView.classList.add('hidden');
+                        } else {
+                            renderedView.classList.add('hidden');
+                            rawView.classList.remove('hidden');
+                        }
+                    });
+                });
+                // Set initial view based on content presence
+                const hasRenderedContent = renderedView && renderedView.innerText.trim() !== '' && !renderedView.querySelector('p')?.innerText.includes('Could not render summary');
+                const hasRawContent = summaryRawTextElement && summaryRawTextElement.innerText.trim() !== '';
+
+                if (hasRenderedContent) {
+                    renderedView.classList.remove('hidden');
+                    rawView.classList.add('hidden');
+                    viewToggles.forEach(btn => btn.classList.toggle('active', btn.getAttribute('data-view') === 'rendered'));
+                } else if (hasRawContent) {
+                    renderedView.classList.add('hidden');
+                    rawView.classList.remove('hidden');
+                    viewToggles.forEach(btn => btn.classList.toggle('active', btn.getAttribute('data-view') === 'raw'));
+                } else {
+                     // Default if no content (e.g., initial load)
+                     renderedView.classList.remove('hidden');
+                     rawView.classList.add('hidden');
+                     viewToggles.forEach(btn => btn.classList.toggle('active', btn.getAttribute('data-view') === 'rendered'));
+                }
+            }
+
+
+            // --- Copy Button Logic ---
+            if (copyButton && summaryRawTextElement) {
+                if (summaryRawTextElement.innerText && summaryRawTextElement.innerText.trim() !== '' && !summaryRawTextElement.innerText.startsWith("Error:")) {
+                    copyButton.style.display = 'inline-block';
+                    copyButton.addEventListener('click', function() {
+                        const textToCopy = summaryRawTextElement.innerText;
+                        console.log("Attempting to copy raw text...");
+                        if (!navigator.clipboard) {
+                            alert('Clipboard API not available (maybe insecure context/HTTP?). Please copy manually.');
+                            return;
+                        }
+                        navigator.clipboard.writeText(textToCopy).then(function() {
+                            console.log("Copy successful");
+                            copyButton.innerText = 'Copied!';
+                            copyButton.disabled = true;
+                            setTimeout(function() {
+                                copyButton.innerText = 'Copy Raw Text';
+                                copyButton.disabled = false;
+                            }, 1500);
+                        }, function(err) {
+                            console.error('Could not copy text: ', err);
+                            alert('Failed to copy text. See console for details.');
+                            copyButton.innerText = 'Copy Failed';
+                             setTimeout(function() {
+                                copyButton.innerText = 'Copy Raw Text';
+                            }, 1500);
+                        });
+                    });
+                } else {
+                     console.log("Copy button hidden: No raw text content or content is error.");
+                     copyButton.style.display = 'none';
+                }
+            } else if (copyButton) {
+                 console.log("Copy button hidden: Target element not found.");
+                 copyButton.style.display = 'none';
+            }
+
+        }); // End DOMContentLoaded
+    </script>
+
+</body>
+</html>

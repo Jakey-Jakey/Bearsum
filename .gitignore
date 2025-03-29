@@ -1,0 +1,30 @@
+# .gitignore
+*.pyc
+__pycache__/
+*.log
+
+# Environment files
+.env
+*.env
+
+# Virtual environment
+venv/
+.venv/
+env/
+ENV/
+*/env/
+*/ENV/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Temporary directories (if using a fixed name, though tempfile is preferred)
+# uploads/
+
+# IDE files
+.idea/
+.vscode/
+
+# Flask-Session directory
+flask_session/
