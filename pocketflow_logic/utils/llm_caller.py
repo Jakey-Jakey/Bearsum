@@ -32,9 +32,9 @@ else:
          # client remains None
 
 # --- Define Perplexity Models ---
-# Using smaller/faster Sonar Llama 3 model for initial summaries
+# Using smaller/faster Sonar model for initial summaries
 INITIAL_SUMMARY_MODEL = "sonar" # Use updated model names if needed
-# Using larger Sonar Llama 3 model for potentially better combination
+# Using larger Sonar model for potentially better combination
 COMBINATION_MODEL = "sonar" # Use updated model names if needed
 # Use a capable model for creative writing
 STORY_MODEL = "sonar"
@@ -71,20 +71,13 @@ Coherent Combined Document ({level}):
 
 # --- New Hackathon Story Prompt Template ---
 HACKATHON_STORY_PROMPT_TEMPLATE = """
-You are a fun, slightly dramatic storyteller. Based *only* on the following recent commit log from a public GitHub repository named '{repo_name}' during a hackathon event called Bearhacks, write a short (2-4 paragraphs), engaging, fictional narrative about the developers' journey.
+Transform a GitHub commit history of '{repo_name}' into a whimsical, dramatic, and humor-filled narrative that portrays the ups and downs of the development process. Begin by analyzing the commit messages chronologically, identifying themes such as “bug fixes,” “feature additions,” “desperate hotfixes,” or “refactoring madness.” Assign personas or exaggerated character archetypes (e.g., the meticulous perfectionist, the caffeine-fueled night owl, or the chaos-driven debugger) to key contributors or commit phases. Weave these personas into a continuous story that captures moments of triumph, despair, and unexpected enlightenment. Highlight recurring patterns (like frequent rollbacks or inconsistent naming conventions) as comedic plot points—perhaps a persistent bug becomes an evil villain or an endless refactor turns into a mythical quest. Add witty commentary about cryptic commit messages (“Fixed stuff” becomes “Hero defeats the unnamed beast”), unexpected merge conflicts (“A civil war erupted in the land of branches”), and last-minute changes before deployment (“A frantic wizard cast ‘git push --force’ in desperation”). Maintain a lighthearted, imaginative tone that balances absurdity with technical reality, making sure the narrative stays engaging and relatable. Conclude with a climactic moment—perhaps a bug vanquished just in time or the feature that finally worked after five rollback attempts.
+output should be in valid Markdown.
 
-*   Weave the commit messages and author names into the story naturally.
-*   Embellish creatively! Imagine the late nights, the bugs squashed, the features brought to life.
-*   Keep the tone lighthearted, maybe a bit epic or humorous, fitting for a 'Bearhacks' theme (think honey, bears, coding dens).
-*   Focus on the *implied* effort and collaboration, not just the technical details.
-*   Do NOT just list the commits. Create a *story*.
-*   Start the story with a title like: ### The Epic Tale of {repo_name}'s Bearhacks Adventure!
-*   Ensure the output is valid Markdown.
-
-Recent Commit Activity:
+Github Commit history:
 {formatted_commits_str}
 
-Now, tell the tale:
+Now, tell the tale, output just the story:
 """
 
 
