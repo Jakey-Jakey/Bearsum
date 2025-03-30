@@ -9,6 +9,7 @@ import logging
 import threading
 import markdown
 import redis
+import json
 from datetime import datetime # Import datetime for formatting
 from flask import Flask, request, render_template, redirect, url_for, session, flash, jsonify, send_file
 from flask_session import Session
