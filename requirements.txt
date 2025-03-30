@@ -8,8 +8,8 @@ Flask-SSE>=0.2.1
 Markdown>=3.3
 redis>=4.0
 requests>=2.25
-gunicorn   # <--- Ensure this is present
-gevent     # <--- Ensure this is present
-numpy
-pandas
-sounddevice
+gunicorn
+gevent
+numpy      # Keep this from the previous step
+# pandas     # <--- REMOVE this line if present
+# sounddevice # <--- REMOVE this line if present
