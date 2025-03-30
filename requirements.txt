@@ -1,4 +1,4 @@
-# requirements.txt
+# Ensure these are present in your requirements.txt
 Flask>=2.0
 openai>=1.0
 python-dotenv>=0.19
@@ -6,8 +6,9 @@ werkzeug>=2.0
 Flask-Session>=0.4
 Flask-SSE>=0.2.1
 Markdown>=3.3
-redis>=4.0 # Add redis client library
-requests>=2.25 # 
+redis>=4.0.0 # <<< Ensure redis client is listed
+requests>=2.25
+uwsgi>=2.0.20 # <<< Add uWSGI
 
-# For production deployment (example)
-# gunicorn
+# You might have other dependencies from the original file, keep them.
+# If 'gunicorn' is listed, you can optionally remove it if only using uwsgi.
