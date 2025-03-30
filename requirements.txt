@@ -1,7 +1,6 @@
 # requirements.txt
 Flask>=2.0
-# openai>=1.0   # <--- Remove or comment out the base line
-openai[datalib]>=1.0 # <--- ADD this line instead (specify version if needed)
+openai[datalib]>=1.0 # Keep this extra
 python-dotenv>=0.19
 werkzeug>=2.0
 Flask-Session>=0.4
@@ -10,7 +9,5 @@ Markdown>=3.3
 redis>=4.0
 requests>=2.25
 gunicorn
-gevent
-numpy      # <--- Keep or remove (datalib should include it, but explicit doesn't harm)
-# pandas     # Ensure pandas is NOT listed separately
-# sounddevice # Ensure sounddevice is NOT listed separately
+# gevent     # <--- REMOVE this line
+numpy      # Keep or remove (datalib should include it)
