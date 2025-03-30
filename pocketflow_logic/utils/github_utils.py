@@ -4,6 +4,7 @@ import logging
 from urllib.parse import urlparse
 import re
 from datetime import datetime, timedelta, timezone
+import base64 # <<< ADDED IMPORT
 
 log = logging.getLogger(__name__)
 
@@ -13,7 +14,7 @@ class GitHubUrlError(ValueError):
     pass
 
 class RepoNotFoundError(Exception):
-    """Custom exception for 404 errors from GitHub API."""
+    """Custom exception for 404 errors from GitHub API (repo level)."""
     pass
 
 class GitHubApiError(Exception):
@@ -69,6 +70,89 @@ def parse_github_url(url: str) -> tuple[str | None, str | None]:
         raise GitHubUrlError("An unexpected error occurred while parsing the URL.")
 
 
+# <<< NEW FUNCTION START >>>
+def get_readme_content(owner: str, repo: str) -> str | None:
+    """
+    Fetches and decodes the README content for a public GitHub repository.
+
+    Args:
+        owner: The repository owner's username.
+        repo: The repository name.
+
+    Returns:
+        The decoded README content as a string, or None if not found or an error occurs.
+    Raises:
+        GitHubApiError: For API errors other than 404 (rate limit, server error, connection issues).
+                       Allows the caller to distinguish between 'not found' and 'fetch failed'.
+    """
+    if not owner or not repo:
+        log.warning("get_readme_content called with empty owner or repo.")
+        return None # Or raise ValueError, but None aligns with graceful degradation
+
+    api_url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/readme"
+    headers = {
+        "Accept": "application/vnd.github.v3+json",
+        "X-GitHub-Api-Version": "2022-11-28"
+    }
+
+    log.info(f"Fetching README for {owner}/{repo}...")
+
+    try:
+        response = requests.get(api_url, headers=headers, timeout=REQUEST_TIMEOUT)
+
+        # Handle status codes
+        if response.status_code == 200:
+            readme_data = response.json()
+            if not isinstance(readme_data, dict) or 'content' not in readme_data:
+                log.error(f"Unexpected API response format for {owner}/{repo} README: {readme_data}")
+                # Treat unexpected format as an error, but return None for simplicity
+                # raise GitHubApiError("Unexpected data format for README from GitHub API.")
+                return None # Graceful degradation if format is wrong
+
+            encoded_content = readme_data.get('content')
+            encoding = readme_data.get('encoding')
+
+            if encoding != 'base64' or not encoded_content:
+                log.warning(f"README for {owner}/{repo} has unexpected encoding ('{encoding}') or is empty.")
+                return None # Cannot decode if not base64 or empty
+
+            try:
+                # Add padding if necessary for base64 decoding
+                encoded_content += '=' * (-len(encoded_content) % 4)
+                decoded_bytes = base64.b64decode(encoded_content)
+                readme_content = decoded_bytes.decode('utf-8')
+                log.info(f"Successfully fetched and decoded README for {owner}/{repo} ({len(readme_content)} chars).")
+                return readme_content
+            except (base64.binascii.Error, UnicodeDecodeError) as decode_err:
+                log.error(f"Error decoding README content for {owner}/{repo}: {decode_err}")
+                return None # Treat decoding errors gracefully
+
+        elif response.status_code == 404:
+            log.info(f"README not found for {owner}/{repo} (404).")
+            return None # Explicitly return None for 'Not Found'
+        elif response.status_code == 403:
+            log.warning(f"Access forbidden or rate limit exceeded for {owner}/{repo} README (403).")
+            raise GitHubApiError("Access forbidden or GitHub API rate limit exceeded fetching README.")
+        else:
+            # Handle other 4xx/5xx errors
+            log.error(f"GitHub API error fetching README for {owner}/{repo}: {response.status_code} - {response.text[:200]}")
+            raise GitHubApiError(f"GitHub API returned status {response.status_code} fetching README.")
+
+    except requests.exceptions.Timeout:
+        log.error(f"Request timed out while fetching README for {owner}/{repo}.")
+        raise GitHubApiError("Request to GitHub API timed out fetching README.")
+    except requests.exceptions.RequestException as e:
+        log.error(f"Network error fetching README for {owner}/{repo}: {e}", exc_info=True)
+        raise GitHubApiError(f"Could not connect to GitHub API fetching README: {e}")
+    except Exception as e:
+        # Catch-all for unexpected errors during processing
+        log.error(f"Unexpected error fetching README for {owner}/{repo}: {e}", exc_info=True)
+        # Return None to allow proceeding with commits if possible
+        # raise GitHubApiError("An unexpected error occurred while fetching the README.")
+        return None # Graceful degradation on unexpected errors
+# <<< NEW FUNCTION END >>>
+
+
 def get_recent_commits(owner: str, repo: str, days=3, limit=30) -> list[dict]:
     """
     Fetches recent commits for a public GitHub repository.
@@ -111,8 +195,8 @@ def get_recent_commits(owner: str, repo: str, days=3, limit=30) -> list[dict]:
         if response.status_code == 200:
             commits_data = response.json()
             if not isinstance(commits_data, list):
-                 log.error(f"Unexpected API response format for {owner}/{repo}: {type(commits_data)}")
-                 raise GitHubApiError("Unexpected data format from GitHub API.")
+                 log.error(f"Unexpected API response format for {owner}/{repo} commits: {type(commits_data)}")
+                 raise GitHubApiError("Unexpected data format for commits from GitHub API.")
 
             extracted_commits = []
             for commit_info in commits_data[:limit]: # Apply limit again just in case API returns more
@@ -144,25 +228,23 @@ def get_recent_commits(owner: str, repo: str, days=3, limit=30) -> list[dict]:
             log.warning(f"Repository {owner}/{repo} not found (404).")
             raise RepoNotFoundError(f"Repository '{owner}/{repo}' not found or is private.")
         elif response.status_code == 403:
-             log.warning(f"Access forbidden or rate limit exceeded for {owner}/{repo} (403). Response: {response.text[:200]}")
-             # Check headers for rate limit info if needed
-             # remaining = response.headers.get('X-RateLimit-Remaining')
-             raise GitHubApiError("Access forbidden or GitHub API rate limit exceeded. Please wait and try again.")
+             log.warning(f"Access forbidden or rate limit exceeded for {owner}/{repo} commits (403). Response: {response.text[:200]}")
+             raise GitHubApiError("Access forbidden or GitHub API rate limit exceeded fetching commits. Please wait and try again.")
         elif response.status_code == 422:
-             log.warning(f"Unprocessable Entity (e.g., empty repo) for {owner}/{repo} (422).")
+             log.warning(f"Unprocessable Entity (e.g., empty repo) for {owner}/{repo} commits (422).")
              # Treat as no commits found
              return []
         else:
             # Handle other 4xx/5xx errors
-            log.error(f"GitHub API error for {owner}/{repo}: {response.status_code} - {response.text[:200]}")
-            raise GitHubApiError(f"GitHub API returned status {response.status_code}.")
+            log.error(f"GitHub API error fetching commits for {owner}/{repo}: {response.status_code} - {response.text[:200]}")
+            raise GitHubApiError(f"GitHub API returned status {response.status_code} fetching commits.")
 
     except requests.exceptions.Timeout:
         log.error(f"Request timed out while fetching commits for {owner}/{repo}.")
-        raise GitHubApiError("Request to GitHub API timed out.")
+        raise GitHubApiError("Request to GitHub API timed out fetching commits.")
     except requests.exceptions.RequestException as e:
         log.error(f"Network error fetching commits for {owner}/{repo}: {e}", exc_info=True)
-        raise GitHubApiError(f"Could not connect to GitHub API: {e}")
+        raise GitHubApiError(f"Could not connect to GitHub API fetching commits: {e}")
     except Exception as e:
         # Catch-all for unexpected errors during processing
         log.error(f"Unexpected error fetching commits for {owner}/{repo}: {e}", exc_info=True)
