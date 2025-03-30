@@ -372,7 +372,7 @@ def index():
     elif story_task_id:
         task_to_check = story_task_id
         task_type = 'story'
-        task_state = None
+    task_state = None
 
     if task_to_check:
         task_entry = get_task_result(task_to_check)
