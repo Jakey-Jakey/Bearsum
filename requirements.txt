@@ -8,4 +8,4 @@ redis>=4.0
 requests>=2.25
 gunicorn>=20.1.0
 gevent>=22.10.2
-openai[all]>=1.0
+openai>=1.0
