@@ -8,4 +8,5 @@ Flask-SSE>=0.2.1
 Markdown>=3.3
 redis>=4.0
 requests>=2.25
-gunicorn # <<< ADD THIS LINE
+gunicorn   # <--- Ensure this is present
+gevent     # <--- Ensure this is present
