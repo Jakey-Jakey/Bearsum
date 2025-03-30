@@ -2,7 +2,7 @@ services:
   - type: web
     name: pocket-summarizer
     env: python
-    region: us-east-1
+    region: virginia
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
     envVars:
@@ -18,7 +18,7 @@ services:
 
   - type: redis
     name: pocket-summarizer-redis
-    region: us-east-1
+    region: virginia
     ipAllowList:
       - source: 0.0.0.0/0
         description: everywhere
