@@ -411,7 +411,7 @@ def index():
                 is_processing_summary = True
             else:
                 is_processing_story = True
-            active_task_id_for_template = task_to_check
+                active_task_id_for_template = task_to_check
         else: # task_type == 'story'
             is_processing_story = True
             active_task_id_for_template = task_to_check
