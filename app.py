@@ -1,4 +1,5 @@
 # app.py
+# --- Imports ---
 import os
 import uuid
 import tempfile
@@ -6,66 +7,93 @@ import shutil
 import logging
 import threading
 import markdown
-from datetime import datetime # Import datetime for formatting
+from datetime import datetime
 from flask import Flask, request, render_template, redirect, url_for, session, flash, jsonify, send_file
-# >>> MODIFY Flask-Session import and add redis <<<
-# from flask_session import Session # Remove this if present
-from flask_session import Session # Keep or add this
+# >>> Import Flask-Session and redis <<<
+from flask_session import Session # Ensure this is imported
 import redis # <<< ADD THIS IMPORT
 # >>> END MODIFICATION <<<
 from flask_sse import sse
 from dotenv import load_dotenv
-
-# Import PocketFlow flow creation function (if still needed, otherwise remove)
-# from pocketflow_logic.flow import create_summary_flow
-
 # Import utilities
-from pocketflow_logic.utils import file_handler, llm_caller # <<< Ensure llm_caller is imported
+from pocketflow_logic.utils import file_handler, llm_caller # Ensure llm_caller is imported
 # --- ADD Import for GitHub utils and exceptions ---
 from pocketflow_logic.utils import github_utils
 from pocketflow_logic.utils.github_utils import GitHubUrlError, RepoNotFoundError, GitHubApiError
 # -------------------------------------------------
 
 # --- Configuration ---
-load_dotenv()
+load_dotenv() # Load .env file for local development (Render uses env vars directly)
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
 app.logger.setLevel(logging.INFO)
 
-# --- Flask-Session Configuration ---
-app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "dev-secret-key-replace-me!")
-app.config["SESSION_TYPE"] = "filesystem"
-app.config["SESSION_FILE_DIR"] = "./flask_session"
+# --- Flask-Session Configuration (MODIFIED FOR REDIS ON RENDER) ---
+app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "dev-secret-key-replace-me!") # Keep using env var
+
+# CRITICAL: Configure session to use Redis
+# Render automatically provides the REDIS_URL environment variable for its managed Redis instances
+redis_url = os.getenv("REDIS_URL")
+if not redis_url:
+    app.logger.warning("REDIS_URL environment variable not set. Session storage may fail.")
+    # Fallback to filesystem for local dev IF NEEDED, but strongly discouraged for Render
+    app.config["SESSION_TYPE"] = "filesystem"
+    app.config["SESSION_FILE_DIR"] = "./flask_session" # Ensure this directory exists or is created
+    app.logger.warning("Falling back to filesystem sessions. THIS WILL NOT WORK RELIABLY ON RENDER.")
+else:
+    app.logger.info(f"Configuring Flask-Session to use Redis at inferred URL (from REDIS_URL env var)")
+    app.config["SESSION_TYPE"] = "redis"
+    # Flask-Session expects a redis.Redis client instance
+    # Create the client using the URL provided by Render
+    try:
+        # Add ssl_cert_reqs=None if using Redis 6+ with TLS without custom certs (Render often handles this)
+        # Set decode_responses=True if you store complex structures directly, usually False is fine as Flask-Session pickles.
+        app.config["SESSION_REDIS"] = redis.from_url(redis_url, ssl_cert_reqs=None, decode_responses=False) # Added ssl_cert_reqs=None
+        app.logger.info("Redis client for Flask-Session configured successfully.")
+    except Exception as e:
+        app.logger.error(f"Failed to create Redis client from REDIS_URL: {e}", exc_info=True)
+        app.logger.error("Sessions will likely fail. Check REDIS_URL and Redis service status.")
+        # Optionally fallback or raise an error
+        app.config["SESSION_TYPE"] = "filesystem" # Fallback as last resort, but log error prominently
+        app.config["SESSION_FILE_DIR"] = "./flask_session"
+        app.logger.critical("CRITICAL: Fell back to filesystem sessions due to Redis connection error. DEPLOYMENT WILL BE UNRELIABLE.")
+
+# These filesystem settings are now only used if REDIS_URL is missing (fallback case)
+# app.config["SESSION_FILE_DIR"] = "./flask_session" # Keep for fallback case if dir needs creation
 app.config["SESSION_PERMANENT"] = False
-app.config["SESSION_USE_SIGNER"] = True
+app.config["SESSION_USE_SIGNER"] = True # Recommended for security
+
+# Initialize Flask-Session AFTER configuration
+# If Session(app) was called earlier, ensure it's called here.
 Session(app)
 
 # --- Flask-SSE Configuration ---
-app.config["REDIS_URL"] = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+# Use the detected redis_url if available, otherwise use default for local dev
+app.config["REDIS_URL"] = redis_url if redis_url else os.getenv("REDIS_URL_FALLBACK", "redis://localhost:6379/0") # Use detected URL or fallback/local default
 app.register_blueprint(sse, url_prefix='/stream')
 
-# --- Simple In-Memory Task Storage (HACKATHON ONLY) ---
-# Store results for both summarizer and story generator
+# --- Simple In-Memory Task Storage (HACKATHON ONLY - Results lost on deploy/restart) ---
 # Structure: { task_id: {'type': 'summary'/'story', 'result': ..., 'errors': [], 'state': 'processing'/'completed'/'error'} }
 task_results = {}
 
-# Security check for default SECRET_KEY
+# --- Security check for default SECRET_KEY ---
+# This check remains important for production environments like Render
 if not app.debug and app.config["SECRET_KEY"] == "dev-secret-key-replace-me!":
     app.logger.critical("SECURITY ALERT: Running in non-debug mode with default SECRET_KEY!")
-    raise RuntimeError("FLASK_SECRET_KEY must be set to a strong, unique value in production (non-debug) mode.")
+    # Consider raising RuntimeError only if not running on a platform that injects keys,
+    # but it's safer to require it explicitly.
+    raise RuntimeError("FLASK_SECRET_KEY must be set to a strong, unique value in production (non-debug) mode via environment variables.")
 elif app.debug and app.config["SECRET_KEY"] == "dev-secret-key-replace-me!":
-     app.logger.warning("SECURITY WARNING: Using default SECRET_KEY in debug mode. Set FLASK_SECRET_KEY environment variable.")
+     app.logger.warning("SECURITY WARNING: Using default SECRET_KEY in debug mode. Set FLASK_SECRET_KEY environment variable for production.")
 
-# Pass file limits to template context via config
+# --- Pass file limits to template context ---
 app.config['MAX_FILES'] = file_handler.MAX_FILES
 app.config['MAX_FILE_SIZE_MB'] = file_handler.MAX_FILE_SIZE_MB
 
 # --- Background Task Function (Summarizer) ---
-# (run_summarizer_async remains unchanged from previous version)
+# (run_summarizer_async remains unchanged - uWSGI with enable-threads handles it)
 def run_summarizer_async(task_id, temp_file_details, summary_level, original_filenames):
     """Runs the file summarization in a background thread."""
-    # This function assumes PocketFlow is NOT used for simplicity now.
-    # If PocketFlow is needed, re-integrate its logic here.
     with app.app_context():
         app.logger.info(f"Summarizer Task {task_id}: Background thread started.")
         task_results[task_id] = {'type': 'summary', 'state': 'processing', 'errors': []}
@@ -77,11 +105,8 @@ def run_summarizer_async(task_id, temp_file_details, summary_level, original_fil
         try:
             sse.publish({"type": "status", "message": "Initializing summarization..."}, channel=task_id)
 
-            # --- Simplified Logic (No PocketFlow) ---
-            # 1. Process each file individually
             total_files = len(temp_file_details)
             if total_files > 0:
-                 # Get temp_dir from the first file detail (assuming they are all in the same dir)
                  temp_dir = os.path.dirname(temp_file_details[0]['temp_path'])
 
             for i, file_detail in enumerate(temp_file_details):
@@ -109,7 +134,6 @@ def run_summarizer_async(task_id, temp_file_details, summary_level, original_fil
                 else:
                     sse.publish({"type": "status", "message": f"Received summary for '{original_name}'."}, channel=task_id)
 
-            # 2. Combine summaries if any were successful
             valid_summaries = {name: summ for name, summ in all_summaries.items() if isinstance(summ, str) and not summ.startswith("Error:") and not summ.startswith("Skipped:")}
 
             if not valid_summaries:
@@ -121,7 +145,6 @@ def run_summarizer_async(task_id, temp_file_details, summary_level, original_fil
                 combined_text = "\n\n".join([f"--- Summary for {name} ---\n{summary}" for name, summary in valid_summaries.items()])
                 final_summary = llm_caller.get_combined_summary(combined_text, level=summary_level)
 
-                # Append notes about failed files
                 failed_files = [name for name, summ in all_summaries.items() if name not in valid_summaries]
                 if failed_files:
                     note = f"\n\nNote: The following files could not be summarized or were skipped: {', '.join(failed_files)}"
@@ -139,7 +162,6 @@ def run_summarizer_async(task_id, temp_file_details, summary_level, original_fil
             task_results.setdefault(task_id, {})["result"] = final_summary
             if errors:
                  task_results.setdefault(task_id, {}).setdefault("errors", []).extend(errors)
-                 # If we got some summaries but combination failed, still mark as error
                  if final_state != "error": final_state = "error"
 
         except Exception as e:
@@ -169,6 +191,7 @@ def run_summarizer_async(task_id, temp_file_details, summary_level, original_fil
 
 
 # --- Background Task Function (Story Generator) --- UPDATED ---
+# (run_story_generation_async remains unchanged - uWSGI with enable-threads handles it)
 def run_story_generation_async(task_id: str, github_url: str):
     """Fetches commits AND README, then generates a hackathon story."""
     with app.app_context():
@@ -197,32 +220,27 @@ def run_story_generation_async(task_id: str, github_url: str):
                 if readme_content:
                     sse.publish({"type": "status", "message": "README found."}, channel=task_id)
                 else:
-                    # This covers both 404 and non-fatal errors in get_readme_content
                     sse.publish({"type": "status", "message": "README not found or unreadable. Proceeding without it."}, channel=task_id)
             except GitHubApiError as e:
-                # Log API errors (like rate limits) but allow proceeding if commits can still be fetched
                 app.logger.warning(f"Story Task {task_id}: GitHub API error fetching README for {owner}/{repo}: {e}. Attempting to proceed with commits.")
                 task_results[task_id].setdefault("errors", []).append(f"Warning: Could not fetch README due to API error ({e}). Story context may be limited.")
                 sse.publish({"type": "status", "message": f"Warning: Error fetching README ({e}). Trying commits only."}, channel=task_id)
                 readme_content = None # Ensure it's None
             except Exception as e_readme:
-                 # Catch any other unexpected error during README fetch
                  error_id_readme = uuid.uuid4()
                  app.logger.error(f"Story Task {task_id}: Unexpected error fetching README for {owner}/{repo} (Error ID: {error_id_readme}).", exc_info=True)
                  task_results[task_id].setdefault("errors", []).append(f"Warning: Unexpected error fetching README (Ref: {error_id_readme}).")
                  sse.publish({"type": "status", "message": "Warning: Unexpected error fetching README. Trying commits only."}, channel=task_id)
                  readme_content = None # Ensure it's None
-            # --- End Fetch README ---
 
             # 3. Fetch Commits
             sse.publish({"type": "status", "message": f"Fetching recent commits for {owner}/{repo}..."}, channel=task_id)
             try:
                 commits = github_utils.get_recent_commits(owner, repo, days=3, limit=30)
             except RepoNotFoundError as e:
-                error_message = str(e) # If repo not found, we can't get commits or README
+                error_message = str(e)
                 raise
             except GitHubApiError as e:
-                # If commits fail, we might still have README, but story is likely poor. Treat as failure.
                 error_message = f"GitHub API Error fetching commits: {e}"
                 raise
 
@@ -233,7 +251,6 @@ def run_story_generation_async(task_id: str, github_url: str):
                  task_results.setdefault(task_id, {}).setdefault("errors", []).append(error_message)
                  task_results.setdefault(task_id, {})["result"] = f"Could not generate story: {error_message}"
                  app.logger.warning(f"Story Task {task_id}: {error_message}")
-                 # Proceed to finally without calling LLM
 
             else:
                 # 4. Format Context (README + Commits)
@@ -241,7 +258,6 @@ def run_story_generation_async(task_id: str, github_url: str):
                 context_parts = []
 
                 if readme_content:
-                    # Limit README size to avoid excessive context length (e.g., first 10000 chars)
                     readme_limit = 10000
                     truncated_readme = readme_content[:readme_limit]
                     if len(readme_content) > readme_limit:
@@ -249,14 +265,13 @@ def run_story_generation_async(task_id: str, github_url: str):
                         app.logger.info(f"Story Task {task_id}: Truncated README for context (limit {readme_limit} chars).")
 
                     context_parts.append("--- README CONTENT START ---")
-                    context_parts.append(truncated_readme) # Use potentially truncated content
+                    context_parts.append(truncated_readme)
                     context_parts.append("--- README CONTENT END ---")
 
                 if commits:
                     formatted_commits_list = []
                     for i, c in enumerate(commits):
                         try:
-                            # Attempt to parse ISO date string, handle potential errors
                             dt_obj = datetime.fromisoformat(c['date'].replace('Z', '+00:00'))
                             formatted_date = dt_obj.strftime('%Y-%m-%d %H:%M UTC')
                         except (ValueError, TypeError, KeyError):
@@ -267,25 +282,23 @@ def run_story_generation_async(task_id: str, github_url: str):
                         )
                     formatted_commits_str = "\n".join(formatted_commits_list)
 
-                    context_parts.append("\n--- COMMIT HISTORY START ---") # Add newline for separation
+                    context_parts.append("\n--- COMMIT HISTORY START ---")
                     context_parts.append(formatted_commits_str)
                     context_parts.append("--- COMMIT HISTORY END ---")
                     sse.publish({"type": "status", "message": f"Found {len(commits)} recent commits."}, channel=task_id)
-                elif not readme_content: # Should not happen due to earlier check, but safeguard
+                elif not readme_content:
                      app.logger.error(f"Story Task {task_id}: Logic error - No commits and no readme, but proceeded.")
                      raise ValueError("Internal error: No content to generate story from.")
 
-
-                combined_context = "\n\n".join(context_parts) # Join sections with double newline
+                combined_context = "\n\n".join(context_parts)
 
                 # 5. Call LLM for Story
                 sse.publish({"type": "status", "message": "Asking the AI storyteller..."}, channel=task_id)
-                # Pass the combined context string
                 story_result = llm_caller.get_hackathon_story(repo, combined_context)
 
                 if isinstance(story_result, str) and story_result.startswith("Error:"):
                     error_message = f"Story Generation Failed: {story_result}"
-                    raise ValueError(error_message) # Treat LLM error as exception
+                    raise ValueError(error_message)
 
                 # 6. Success
                 task_results.setdefault(task_id, {})["result"] = story_result
@@ -294,12 +307,11 @@ def run_story_generation_async(task_id: str, github_url: str):
 
         except (GitHubUrlError, RepoNotFoundError, GitHubApiError, ValueError, Exception) as e:
             error_id = uuid.uuid4()
-            if not error_message: # Ensure a generic message if specific one wasn't set
+            if not error_message:
                  error_message = f"A critical background error occurred (Ref: {error_id})."
-            # Check if it's a known GitHub error type before logging the full trace for those
             if isinstance(e, (GitHubUrlError, RepoNotFoundError, GitHubApiError)):
                  app.logger.error(f"Story Task {task_id}: Background task failed. Error: {error_message}")
-            else: # Log full trace for unexpected errors
+            else:
                  app.logger.error(f"Story Task {task_id}: Background task failed. Error: {e} (Error ID: {error_id}).", exc_info=True)
 
             task_results.setdefault(task_id, {}).setdefault("errors", []).append(error_message)
@@ -330,9 +342,8 @@ def index():
     task_id_to_clear = None
     is_processing_summary = False
     is_processing_story = False
-    active_task_id_for_template = None # Store the ID of the task currently processing
+    active_task_id_for_template = None
 
-    # --- RESULT CHECKING LOGIC ---
     task_to_check = None
     task_type = None
 
@@ -349,7 +360,7 @@ def index():
         app.logger.info(f"Checking Task {task_to_check} (Type: {task_type}). Found in task_results with state: {task_state}")
 
         if task_state in ['completed', 'error']:
-            results = task_results.pop(task_to_check)
+            results = task_results.pop(task_to_check) # Pop result when done
             task_id_to_clear = f'current_{task_type}_task_id'
             app.logger.info(f"{task_type.capitalize()} Task {task_to_check}: Results retrieved (state={task_state}) and cleared.")
         elif task_state == 'processing':
@@ -358,19 +369,17 @@ def index():
                 is_processing_summary = True
             else: # task_type == 'story'
                 is_processing_story = True
-            active_task_id_for_template = task_to_check # Use the ID found
+            active_task_id_for_template = task_to_check
         else:
              app.logger.warning(f"Task {task_to_check} found with unexpected state '{task_state}'. Treating as error and popping.")
              results = task_results.pop(task_to_check, {'state': 'error', 'errors': [f"Task ended in unexpected state: {task_state}"], 'type': task_type}) # Pop safely
-             results['state'] = 'error' # Force error state
+             results['state'] = 'error'
              task_id_to_clear = f'current_{task_type}_task_id'
 
     elif task_to_check:
          app.logger.warning(f"Task {task_to_check} (Type: {task_type}) found in session but not in task_results. Clearing session.")
          task_id_to_clear = f'current_{task_type}_task_id'
 
-
-    # Clear session variables if results were retrieved or task was invalid
     if task_id_to_clear:
         session.pop(task_id_to_clear, None)
 
@@ -379,20 +388,17 @@ def index():
          session.pop('download_summary_raw', None)
     if not is_processing_story:
          session.pop('story_result_raw', None)
-    # --- END RESULT CHECKING LOGIC ---
 
-
-    # Prepare results for template based on popped results
     summary_html, summary_raw = None, None
     story_html, story_raw = None, None
 
-    if results: # Only process if results were actually popped
+    if results:
         errors = results.get("errors")
         if errors:
             for error in errors: flash(error, 'error')
 
         result_content = results.get("result")
-        result_type = results.get('type') # Get type from popped results
+        result_type = results.get('type')
 
         if result_type == 'summary':
             if isinstance(result_content, str) and result_content.startswith("Error:"):
@@ -402,7 +408,7 @@ def index():
                 summary_raw = result_content
                 try:
                      summary_html = markdown.markdown(summary_raw, extensions=['fenced_code', 'sane_lists'])
-                     session['download_summary_raw'] = summary_raw
+                     session['download_summary_raw'] = summary_raw # Store raw text for download
                 except Exception as md_err:
                      app.logger.error(f"Markdown rendering failed for summary: {md_err}")
                      flash("Failed to render summary preview.", 'error')
@@ -419,7 +425,7 @@ def index():
                 story_raw = result_content
                 try:
                      story_html = markdown.markdown(story_raw, extensions=['fenced_code', 'sane_lists'])
-                     session['story_result_raw'] = story_raw
+                     session['story_result_raw'] = story_raw # Store raw story for potential copy/download
                 except Exception as md_err:
                      app.logger.error(f"Markdown rendering failed for story: {md_err}")
                      flash("Failed to render story preview.", 'error')
@@ -431,7 +437,6 @@ def index():
     app.logger.info(f"Rendering index. Processing Summary: {is_processing_summary}, Processing Story: {is_processing_story}")
     app.logger.info(f"Summary Result Available: {summary_raw is not None}, Story Result Available: {story_raw is not None}")
 
-    # Ensure the active task ID is passed correctly to the template
     template_summary_task_id = summary_task_id if is_processing_summary else None
     template_story_task_id = story_task_id if is_processing_story else None
 
@@ -443,14 +448,14 @@ def index():
                            story_raw=story_raw,
                            is_processing_summary=is_processing_summary,
                            is_processing_story=is_processing_story,
-                           summary_task_id=template_summary_task_id, # Pass correct active ID
-                           story_task_id=template_story_task_id      # Pass correct active ID
+                           summary_task_id=template_summary_task_id,
+                           story_task_id=template_story_task_id
                            )
 
 
 @app.route('/process', methods=['POST'])
 def process_files():
-    # Clear potentially active tasks
+    # Clear potentially active tasks and results from session
     session.pop('current_story_task_id', None)
     session.pop('current_summary_task_id', None)
     session.pop('download_summary_raw', None)
@@ -469,7 +474,7 @@ def process_files():
         flash(f"Invalid summary level specified, using default 'Medium'.", 'warning')
         summary_level = 'medium'
 
-    temp_dir_base = None # Initialize variable
+    temp_dir_base = None
     processing_errors = []
     try:
         temp_dir_base = tempfile.mkdtemp()
@@ -495,13 +500,13 @@ def process_files():
         thread = threading.Thread(target=run_summarizer_async, args=(
             task_id, thread_file_details, summary_level, original_filenames
         ))
-        thread.daemon = True
+        thread.daemon = True # Daemon threads exit when the main process exits
         thread.start()
         app.logger.info(f"Summarizer Task {task_id}: Background thread started.")
         session['current_summary_task_id'] = task_id
 
-        for error in validation_errors: flash(error, 'error')
-        return redirect(url_for('index'))
+        for error in validation_errors: flash(error, 'error') # Flash errors encountered during saving
+        return redirect(url_for('index')) # Redirect immediately, background task runs independently
 
     except Exception as e:
         error_id = uuid.uuid4()
@@ -515,7 +520,7 @@ def process_files():
 
 @app.route('/generate_story', methods=['POST'])
 def generate_story():
-    # Clear potentially active tasks
+    # Clear potentially active tasks and results from session
     session.pop('current_summary_task_id', None)
     session.pop('download_summary_raw', None)
     session.pop('current_story_task_id', None)
@@ -526,11 +531,10 @@ def generate_story():
         flash('GitHub repository URL is required.', 'error')
         return redirect(url_for('index'))
 
-    github_url = github_url.strip() # Remove leading/trailing whitespace
+    github_url = github_url.strip()
 
-    # Basic check before starting thread
+    # Basic validation before starting thread
     try:
-        # Use the validation logic before starting the thread
         owner, repo = github_utils.parse_github_url(github_url)
     except GitHubUrlError as e:
          flash(f'Invalid GitHub URL: {e}', 'error')
@@ -547,7 +551,7 @@ def generate_story():
         app.logger.info(f"Story Task {task_id}: Background thread started for URL: {github_url}")
         session['current_story_task_id'] = task_id
 
-        return redirect(url_for('index'))
+        return redirect(url_for('index')) # Redirect immediately
 
     except Exception as e:
         error_id = uuid.uuid4()
@@ -577,9 +581,28 @@ def download_summary():
         mem_file, as_attachment=True, download_name='summary.txt', mimetype='text/plain; charset=utf-8'
     )
 
-if __name__ == '__main__':
-    # Ensure the session directory exists
-    if not os.path.exists(app.config["SESSION_FILE_DIR"]):
-        os.makedirs(app.config["SESSION_FILE_DIR"])
-        app.logger.info(f"Created session directory: {app.config['SESSION_FILE_DIR']}")
-    app.run(debug=True, host='0.0.0.0', port=5000, threaded=True)
+# --- Ensure session directory exists (for filesystem fallback ONLY) ---
+# This check runs at import time if SESSION_TYPE is filesystem
+session_dir_fallback = app.config.get("SESSION_FILE_DIR")
+if app.config["SESSION_TYPE"] == "filesystem" and session_dir_fallback and not os.path.exists(session_dir_fallback):
+     try:
+        os.makedirs(session_dir_fallback)
+        app.logger.info(f"Created session directory for fallback at startup: {session_dir_fallback}")
+     except OSError as e:
+        # This might happen due to permissions or race conditions
+        app.logger.warning(f"Could not create session directory for fallback at startup: {e}")
+
+# --- Remove the __main__ block for WSGI deployment ---
+# The following block should be removed or commented out.
+# Execution will be handled by uWSGI via the 'wsgi.py' file.
+#
+# if __name__ == '__main__':
+#     # Ensure the session directory exists if using filesystem
+#     # (This check is duplicated above and might run too late here)
+#     # if app.config["SESSION_TYPE"] == "filesystem" and not os.path.exists(app.config["SESSION_FILE_DIR"]):
+#     #     os.makedirs(app.config["SESSION_FILE_DIR"])
+#     #     app.logger.info(f"Created session directory: {app.config['SESSION_FILE_DIR']}")
+#
+#     # debug=True is NOT recommended for production
+#     # threaded=True is less relevant when using uWSGI workers/threads
+#     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get("PORT", 5000))) # Use PORT from env var
