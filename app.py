@@ -242,12 +242,10 @@ def run_story_generation_async(task_id: str, github_url: str):
     """Fetches commits AND README, then generates a hackathon story."""
     with app.app_context():
         app.logger.info(f"Story Task {task_id}: Background thread started for URL: {github_url}")
-        # Initialize state in Redis
         store_task_result(task_id, 'story', 'processing', None, [])
         owner, repo = None, None
-        final_state = "unknown" # Track the intended final state
+        final_state = "unknown"
         error_message = None
-        errors = [] # Accumulate errors/warnings here
         commits = []
         readme_content = None
         combined_context = "" # Initialize combined context
@@ -259,7 +257,6 @@ def run_story_generation_async(task_id: str, github_url: str):
                 owner, repo = github_utils.parse_github_url(github_url)
             except GitHubUrlError as e:
                 error_message = f"Invalid GitHub URL: {e}"
-                errors.append(error_message)
                 raise # Re-raise to be caught by the outer try/except
 
             # --- 2. Fetch README Content ---
@@ -269,23 +266,28 @@ def run_story_generation_async(task_id: str, github_url: str):
                 if readme_content:
                     sse.publish({"type": "status", "message": "README found."}, channel=task_id)
                 else:
-                    # Covers 404 and non-fatal errors in get_readme_content
-                    readme_warning = "README not found or unreadable. Proceeding without it."
-                    errors.append(f"Warning: {readme_warning}")
-                    sse.publish({"type": "status", "message": readme_warning}, channel=task_id)
+                    # This covers both 404 and non-fatal errors in get_readme_content
+                    sse.publish({"type": "status", "message": "README not found or unreadable. Proceeding without it."}, channel=task_id)
             except GitHubApiError as e:
-                # Log API errors but allow proceeding
-                api_warning = f"Warning: Could not fetch README due to API error ({e}). Story context may be limited."
-                app.logger.warning(f"Story Task {task_id}: GitHub API error fetching README for {owner}/{repo}: {e}. Attempting to proceed.")
-                errors.append(api_warning)
+                # Log API errors (like rate limits) but allow proceeding if commits can still be fetched
+                app.logger.warning(f"Story Task {task_id}: GitHub API error fetching README for {owner}/{repo}: {e}. Attempting to proceed with commits.")
+                # Use get_task_result and store_task_result to manage errors across retries if applicable,
+                # otherwise append directly if using simple in-memory dict
+                current_task_data = get_task_result(task_id) or {'errors': []}
+                current_task_data['errors'].append(f"Warning: Could not fetch README due to API error ({e}). Story context may be limited.")
+                store_task_result(task_id, 'story', 'processing', current_task_data.get('result'), current_task_data['errors'])
+
                 sse.publish({"type": "status", "message": f"Warning: Error fetching README ({e}). Trying commits only."}, channel=task_id)
                 readme_content = None # Ensure it's None
             except Exception as e_readme:
                  # Catch any other unexpected error during README fetch
                  error_id_readme = uuid.uuid4()
-                 unexpected_readme_warning = f"Warning: Unexpected error fetching README (Ref: {error_id_readme})."
                  app.logger.error(f"Story Task {task_id}: Unexpected error fetching README for {owner}/{repo} (Error ID: {error_id_readme}).", exc_info=True)
-                 errors.append(unexpected_readme_warning)
+                 # Use get/store task result for errors
+                 current_task_data = get_task_result(task_id) or {'errors': []}
+                 current_task_data['errors'].append(f"Warning: Unexpected error fetching README (Ref: {error_id_readme}).")
+                 store_task_result(task_id, 'story', 'processing', current_task_data.get('result'), current_task_data['errors'])
+
                  sse.publish({"type": "status", "message": "Warning: Unexpected error fetching README. Trying commits only."}, channel=task_id)
                  readme_content = None # Ensure it's None
             # --- End Fetch README ---
@@ -293,23 +295,27 @@ def run_story_generation_async(task_id: str, github_url: str):
             # 3. Fetch Commits
             sse.publish({"type": "status", "message": f"Fetching recent commits for {owner}/{repo}..."}, channel=task_id)
             try:
-                commits = github_utils.get_recent_commits(owner, repo, days=3, limit=30)
+                # FIX IS HERE: Call the function without 'days' or 'limit'
+                commits = github_utils.get_recent_commits(owner, repo)
             except RepoNotFoundError as e:
-                error_message = str(e) # Fatal if repo not found
-                errors.append(error_message)
+                error_message = str(e) # If repo not found, we can't get commits or README
                 raise
             except GitHubApiError as e:
-                # Fatal if commits fail due to API error
+                # If commits fail, we might still have README, but story is likely poor. Treat as failure.
                 error_message = f"GitHub API Error fetching commits: {e}"
-                errors.append(error_message)
                 raise
+            except Exception as e_commits: # Catch other commit errors
+                 error_id_commits = uuid.uuid4()
+                 app.logger.error(f"Story Task {task_id}: Unexpected error fetching commits for {owner}/{repo} (Error ID: {error_id_commits}).", exc_info=True)
+                 error_message = f"Unexpected error fetching commits (Ref: {error_id_commits})."
+                 raise # Re-raise as fatal error for commits
 
             # Check if we have *any* content (commits or README)
             if not commits and not readme_content:
                  error_message = f"No recent commits found and no README available for '{owner}/{repo}'. Cannot generate story."
-                 errors.append(error_message)
                  final_state = "error"
-                 store_task_result(task_id, 'story', final_state, f"Could not generate story: {error_message}", errors)
+                 # Store the specific error message
+                 store_task_result(task_id, 'story', "error", f"Could not generate story: {error_message}", [error_message])
                  app.logger.warning(f"Story Task {task_id}: {error_message}")
                  # Proceed to finally without calling LLM
 
@@ -319,6 +325,7 @@ def run_story_generation_async(task_id: str, github_url: str):
                 context_parts = []
 
                 if readme_content:
+                    # Limit README size to avoid excessive context length (e.g., first 10000 chars)
                     readme_limit = 10000
                     truncated_readme = readme_content[:readme_limit]
                     if len(readme_content) > readme_limit:
@@ -326,69 +333,69 @@ def run_story_generation_async(task_id: str, github_url: str):
                         app.logger.info(f"Story Task {task_id}: Truncated README for context (limit {readme_limit} chars).")
 
                     context_parts.append("--- README CONTENT START ---")
-                    context_parts.append(truncated_readme)
+                    context_parts.append(truncated_readme) # Use potentially truncated content
                     context_parts.append("--- README CONTENT END ---")
 
                 if commits:
                     formatted_commits_list = []
                     for i, c in enumerate(commits):
                         try:
+                            # Attempt to parse ISO date string, handle potential errors
                             dt_obj = datetime.fromisoformat(c['date'].replace('Z', '+00:00'))
                             formatted_date = dt_obj.strftime('%Y-%m-%d %H:%M UTC')
                         except (ValueError, TypeError, KeyError):
-                            formatted_date = c.get('date', 'Unknown Date')
+                            formatted_date = c.get('date', 'Unknown Date') # Fallback
                         message_preview = c.get('message', '')[:100] + ('...' if len(c.get('message', '')) > 100 else '')
                         formatted_commits_list.append(
                             f"{i+1}. Author: {c.get('author', 'N/A')}, Date: {formatted_date}, Message: {message_preview}"
                         )
                     formatted_commits_str = "\n".join(formatted_commits_list)
 
-                    context_parts.append("\n--- COMMIT HISTORY START ---")
+                    context_parts.append("\n--- COMMIT HISTORY START ---") # Add newline for separation
                     context_parts.append(formatted_commits_str)
                     context_parts.append("--- COMMIT HISTORY END ---")
                     sse.publish({"type": "status", "message": f"Found {len(commits)} recent commits."}, channel=task_id)
-                elif not readme_content: # Safeguard
-                     error_message = "Internal error: No content to generate story from."
-                     errors.append(error_message)
+                elif not readme_content: # Should not happen due to earlier check, but safeguard
                      app.logger.error(f"Story Task {task_id}: Logic error - No commits and no readme, but proceeded.")
-                     raise ValueError(error_message)
+                     raise ValueError("Internal error: No content to generate story from.")
 
 
-                combined_context = "\n\n".join(context_parts)
+                combined_context = "\n\n".join(context_parts) # Join sections with double newline
 
                 # 5. Call LLM for Story
                 sse.publish({"type": "status", "message": "Asking the AI storyteller..."}, channel=task_id)
+                # Pass the combined context string
                 story_result = llm_caller.get_hackathon_story(repo, combined_context)
 
                 if isinstance(story_result, str) and story_result.startswith("Error:"):
                     error_message = f"Story Generation Failed: {story_result}"
-                    errors.append(error_message)
                     raise ValueError(error_message) # Treat LLM error as exception
 
                 # 6. Success
+                # Get existing errors before overwriting
+                current_task_data = get_task_result(task_id) or {'errors': []}
+                store_task_result(task_id, 'story', "completed", story_result, current_task_data.get('errors', [])) # Preserve existing warnings
                 final_state = "completed"
-                store_task_result(task_id, 'story', final_state, story_result, errors) # Store success with any prior warnings
                 sse.publish({"type": "status", "message": "Story generation complete!"}, channel=task_id)
 
-        except (GitHubUrlError, RepoNotFoundError, GitHubApiError, ValueError) as e:
-            # Handle known/expected exceptions from processing steps
-            if not error_message: error_message = str(e)
-            if error_message not in errors: errors.append(error_message) # Ensure primary error is logged
-            app.logger.error(f"Story Task {task_id}: Background task failed. Error: {error_message}")
-            final_state = "error"
-            store_task_result(task_id, 'story', final_state, f"Could not generate story: {error_message}", errors)
-        except Exception as e:
-            # Catch any other unexpected errors
+        except (GitHubUrlError, RepoNotFoundError, GitHubApiError, ValueError, Exception) as e:
             error_id = uuid.uuid4()
             if not error_message: # Ensure a generic message if specific one wasn't set
-                 error_message = f"A critical background error occurred during story generation (Ref: {error_id})."
-            if error_message not in errors: errors.append(error_message)
-            app.logger.error(f"Story Task {task_id}: Background task failed unexpectedly. Error: {e} (Error ID: {error_id}).", exc_info=True)
+                 error_message = f"A critical background error occurred (Ref: {error_id}). Reason: {type(e).__name__}"
+            # Check if it's a known GitHub error type before logging the full trace for those
+            if isinstance(e, (GitHubUrlError, RepoNotFoundError, GitHubApiError, ValueError)):
+                 app.logger.error(f"Story Task {task_id}: Background task failed. Error: {error_message} - {e}")
+            else: # Log full trace for unexpected errors
+                 app.logger.error(f"Story Task {task_id}: Background task failed unexpectedly. Error: {e} (Error ID: {error_id}).", exc_info=True)
+                 error_message = f"An unexpected background error occurred (Ref: {error_id})." # Overwrite with generic for unexpected
+
+            # Store error state - get existing errors first
+            current_task_data = get_task_result(task_id) or {'errors': []}
+            current_task_data['errors'].append(error_message) # Append the new error
+            store_task_result(task_id, 'story', "error", f"Could not generate story: {error_message}", current_task_data['errors'])
             final_state = "error"
-            store_task_result(task_id, 'story', final_state, f"Could not generate story: {error_message}", errors)
 
         finally:
-            # --- CORRECTED FINALLY BLOCK ---
             # Attempt to get the most recent result from Redis
             current_result = get_task_result(task_id)
 
@@ -401,7 +408,7 @@ def run_story_generation_async(task_id: str, github_url: str):
                 errors_for_publish = ["Could not retrieve final task state from Redis."]
             else:
                 # Use the retrieved result
-                 # Ensure the state is finalized (if it was left as 'unknown' in the try block)
+                # Ensure the state is finalized (if it was left as 'unknown' in the try block)
                 final_state_for_publish = final_state if final_state != "unknown" else current_result.get('state', 'error')
 
                 # Ensure result and errors exist for logging/SSE, providing defaults
@@ -410,17 +417,15 @@ def run_story_generation_async(task_id: str, github_url: str):
                 if not errors_for_publish and final_state_for_publish == "error":
                     errors_for_publish.append("An unknown error occurred during story generation.")
 
-                # If the state was adjusted here, maybe update Redis again (optional)
+                # If the state was updated here, maybe update Redis again (optional)
                 if final_state_for_publish != current_result.get('state'):
                      app.logger.warning(f"Story Task {task_id}: State adjusted in finally block from '{current_result.get('state')}' to '{final_state_for_publish}'.")
                      # store_task_result(task_id, 'story', final_state_for_publish, result_for_publish, errors_for_publish)
-
 
             # Log the final state decided upon
             app.logger.info(f"Story Task {task_id}: FINAL state={final_state_for_publish}, errors={errors_for_publish}, result_preview='{str(result_for_publish)[:100]}...'")
             # Publish the final state via SSE
             sse.publish({"type": final_state_for_publish, "message": f"Story generation {final_state_for_publish}."}, channel=task_id)
-            # --- END CORRECTION ---
 
 
 # --- Flask Routes ---
