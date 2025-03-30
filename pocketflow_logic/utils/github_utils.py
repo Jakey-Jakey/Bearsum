@@ -3,8 +3,8 @@ import requests
 import logging
 from urllib.parse import urlparse
 import re
-from datetime import datetime, timedelta, timezone
-import base64 # <<< ADDED IMPORT
+from datetime import datetime, timezone # Keep datetime and timezone
+import base64
 
 log = logging.getLogger(__name__)
 
@@ -70,7 +70,6 @@ def parse_github_url(url: str) -> tuple[str | None, str | None]:
         raise GitHubUrlError("An unexpected error occurred while parsing the URL.")
 
 
-# <<< NEW FUNCTION START >>>
 def get_readme_content(owner: str, repo: str) -> str | None:
     """
     Fetches and decodes the README content for a public GitHub repository.
@@ -150,21 +149,20 @@ def get_readme_content(owner: str, repo: str) -> str | None:
         # Return None to allow proceeding with commits if possible
         # raise GitHubApiError("An unexpected error occurred while fetching the README.")
         return None # Graceful degradation on unexpected errors
-# <<< NEW FUNCTION END >>>
 
 
-def get_recent_commits(owner: str, repo: str, days=3, limit=30) -> list[dict]:
+def get_recent_commits(owner: str, repo: str, limit=200) -> list[dict]:
     """
-    Fetches recent commits for a public GitHub repository.
+    Fetches the latest commits (up to the specified limit) for a public GitHub repository.
+    No longer filters by date.
 
     Args:
         owner: The repository owner's username.
         repo: The repository name.
-        days: Fetch commits from the last N days.
-        limit: Maximum number of commits to return.
+        limit: Maximum number of commits to return (default 200).
 
     Returns:
-        A list of commit details dictionaries.
+        A list of commit details dictionaries, sorted most recent first.
     Raises:
         RepoNotFoundError: If the repository is not found (404).
         GitHubApiError: For other API errors (rate limit, server error, connection issues).
@@ -173,79 +171,118 @@ def get_recent_commits(owner: str, repo: str, days=3, limit=30) -> list[dict]:
         raise ValueError("Owner and repo cannot be empty.")
 
     api_url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/commits"
-
-    # Calculate the 'since' date for filtering
-    since_date = datetime.now(timezone.utc) - timedelta(days=days)
-    params = {
-        "per_page": min(limit, 100), # API max is 100
-        "since": since_date.isoformat()
-    }
-
     headers = {
         "Accept": "application/vnd.github.v3+json",
-        "X-GitHub-Api-Version": "2022-11-28" # Recommended practice
+        "X-GitHub-Api-Version": "2022-11-28"
     }
 
-    log.info(f"Fetching commits for {owner}/{repo} since {since_date.isoformat()} (limit {limit})...")
+    all_commits_data = []
+    max_per_page = 100 # GitHub API limit per page for this endpoint
+    pages_to_fetch = (limit + max_per_page - 1) // max_per_page # Calculate needed pages
+
+    log.info(f"Fetching latest commits for {owner}/{repo} (limit {limit}, fetching {pages_to_fetch} pages)...")
 
     try:
-        response = requests.get(api_url, headers=headers, params=params, timeout=REQUEST_TIMEOUT)
+        # Loop through the required number of pages
+        for page in range(1, pages_to_fetch + 1):
+            # Determine how many items to request for this specific page
+            # Usually 100, but could be less for the last page if limit isn't a multiple of 100
+            request_count = min(max_per_page, limit - len(all_commits_data))
+            if request_count <= 0:
+                 break # Already fetched enough commits
 
-        # Check status code FIRST
-        if response.status_code == 200:
-            commits_data = response.json()
-            if not isinstance(commits_data, list):
-                 log.error(f"Unexpected API response format for {owner}/{repo} commits: {type(commits_data)}")
-                 raise GitHubApiError("Unexpected data format for commits from GitHub API.")
+            params = {
+                "per_page": request_count,
+                "page": page
+                # REMOVED "since" parameter
+            }
 
-            extracted_commits = []
-            for commit_info in commits_data[:limit]: # Apply limit again just in case API returns more
-                try:
-                    commit_details = commit_info.get('commit', {})
-                    author_details = commit_details.get('author', {})
-                    # Prefer commit author name, fallback to GitHub login if available
-                    author_name = author_details.get('name', 'Unknown Author')
-                    if author_name == 'Unknown Author' and commit_info.get('author'):
-                        author_name = commit_info['author'].get('login', 'Unknown Author')
+            log.debug(f"Fetching page {page} with params: {params}")
+            response = requests.get(api_url, headers=headers, params=params, timeout=REQUEST_TIMEOUT)
 
-                    commit_date = author_details.get('date', 'Unknown Date')
-                    # Keep only the first line of the commit message
-                    commit_message = commit_details.get('message', '').split('\n', 1)[0].strip()
+            # --- Handle Response Status Codes ---
+            if response.status_code == 200:
+                page_data = response.json()
+                if not isinstance(page_data, list):
+                    log.error(f"Unexpected API response format for {owner}/{repo} commits page {page}: {type(page_data)}")
+                    # Don't raise, just stop fetching more pages perhaps? Or warn.
+                    # For now, just log and break. Consider raising GitHubApiError if strictness needed.
+                    break
+                all_commits_data.extend(page_data)
+                # Stop fetching if we received fewer items than requested (means no more commits)
+                if len(page_data) < request_count:
+                    break
+            elif response.status_code == 404:
+                # If 404 occurs on the first page, repo not found. If on later pages, it's weird but treat as end.
+                if page == 1:
+                    log.warning(f"Repository {owner}/{repo} not found (404).")
+                    raise RepoNotFoundError(f"Repository '{owner}/{repo}' not found or is private.")
+                else:
+                    log.warning(f"Received 404 on page {page} for {owner}/{repo}, assuming no more commits.")
+                    break # Stop fetching
+            elif response.status_code == 403:
+                log.warning(f"Access forbidden or rate limit exceeded for {owner}/{repo} commits (403) on page {page}. Response: {response.text[:200]}")
+                # Raise only if it happens on the first page, otherwise proceed with what we have
+                if page == 1:
+                     raise GitHubApiError("Access forbidden or GitHub API rate limit exceeded fetching commits. Please wait and try again.")
+                else:
+                     log.warning("Continuing with commits fetched so far despite rate limit/forbidden on later page.")
+                     break # Stop fetching
+            elif response.status_code == 422:
+                log.warning(f"Unprocessable Entity (e.g., empty repo) for {owner}/{repo} commits (422) on page {page}.")
+                # Treat as no commits found (especially if on page 1) or end of commits
+                if page == 1: return [] # Return empty list immediately
+                break # Stop fetching
+            else:
+                # Handle other 4xx/5xx errors
+                log.error(f"GitHub API error fetching commits for {owner}/{repo} on page {page}: {response.status_code} - {response.text[:200]}")
+                # Raise only if it happens on the first page
+                if page == 1:
+                     raise GitHubApiError(f"GitHub API returned status {response.status_code} fetching commits.")
+                else:
+                     log.warning("Continuing with commits fetched so far despite API error on later page.")
+                     break # Stop fetching
+        # --- End Page Loop ---
 
-                    extracted_commits.append({
-                        'author': author_name,
-                        'date': commit_date,
-                        'message': commit_message
-                    })
-                except (TypeError, KeyError, AttributeError) as e:
-                    log.warning(f"Could not parse commit info for {owner}/{repo}: {e} - Commit: {commit_info.get('sha', 'N/A')}")
-                    # Skip this commit if parsing fails
+        # --- Process the Combined Data ---
+        extracted_commits = []
+        # Ensure we don't exceed the original limit requested, even if API returned slightly more somehow
+        for commit_info in all_commits_data[:limit]:
+            try:
+                commit_details = commit_info.get('commit', {})
+                author_details = commit_details.get('author', {})
+                author_name = author_details.get('name', 'Unknown Author')
+                if author_name == 'Unknown Author' and commit_info.get('author'):
+                    author_name = commit_info['author'].get('login', 'Unknown Author')
 
-            log.info(f"Successfully fetched {len(extracted_commits)} commits for {owner}/{repo}.")
-            return extracted_commits
+                commit_date = author_details.get('date', 'Unknown Date')
+                commit_message = commit_details.get('message', '').split('\n', 1)[0].strip()
 
-        elif response.status_code == 404:
-            log.warning(f"Repository {owner}/{repo} not found (404).")
-            raise RepoNotFoundError(f"Repository '{owner}/{repo}' not found or is private.")
-        elif response.status_code == 403:
-             log.warning(f"Access forbidden or rate limit exceeded for {owner}/{repo} commits (403). Response: {response.text[:200]}")
-             raise GitHubApiError("Access forbidden or GitHub API rate limit exceeded fetching commits. Please wait and try again.")
-        elif response.status_code == 422:
-             log.warning(f"Unprocessable Entity (e.g., empty repo) for {owner}/{repo} commits (422).")
-             # Treat as no commits found
-             return []
-        else:
-            # Handle other 4xx/5xx errors
-            log.error(f"GitHub API error fetching commits for {owner}/{repo}: {response.status_code} - {response.text[:200]}")
-            raise GitHubApiError(f"GitHub API returned status {response.status_code} fetching commits.")
+                extracted_commits.append({
+                    'author': author_name,
+                    'date': commit_date,
+                    'message': commit_message
+                })
+            except (TypeError, KeyError, AttributeError) as e:
+                log.warning(f"Could not parse commit info for {owner}/{repo}: {e} - Commit: {commit_info.get('sha', 'N/A')}")
+                # Skip this commit if parsing fails
 
-    except requests.exceptions.Timeout:
-        log.error(f"Request timed out while fetching commits for {owner}/{repo}.")
-        raise GitHubApiError("Request to GitHub API timed out fetching commits.")
+        log.info(f"Successfully extracted {len(extracted_commits)} latest commits for {owner}/{repo}.")
+        return extracted_commits
+
+    except requests.exceptions.Timeout as e: # Catch specific exceptions first
+        log.error(f"Request timed out while fetching commits for {owner}/{repo}: {e}")
+        raise GitHubApiError(f"Request to GitHub API timed out fetching commits: {e}")
     except requests.exceptions.RequestException as e:
         log.error(f"Network error fetching commits for {owner}/{repo}: {e}", exc_info=True)
         raise GitHubApiError(f"Could not connect to GitHub API fetching commits: {e}")
+    except RepoNotFoundError: # Re-raise specific errors if needed
+        raise
+    except GitHubApiError: # Re-raise specific errors if needed
+        raise
     except Exception as e:
         # Catch-all for unexpected errors during processing
         log.error(f"Unexpected error fetching commits for {owner}/{repo}: {e}", exc_info=True)
-        raise GitHubApiError("An unexpected error occurred while fetching commits.")
+        # Depending on policy, either raise a generic error or return potentially partial results
+        # Raising is safer to indicate failure.
+        raise GitHubApiError(f"An unexpected error occurred while fetching commits: {e}")
