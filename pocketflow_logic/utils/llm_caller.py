@@ -1,38 +1,44 @@
 # pocketflow_logic/utils/llm_caller.py
 import os
-# import openai # Keep if needed for specific types like openai.RateLimitError below
+import openai # Use the openai library as recommended by Perplexity docs
 import logging
-# from dotenv import load_dotenv # No longer needed here
+from dotenv import load_dotenv
 import re
-# --- ADDED: Import the client from app.py ---
-# We assume app.py will create a client named 'openai_client'
-from app import openai_client # <<< CHANGE: Import client from app
-
-# --- Ensure openai is imported if specific exception types are used ---
-# If you want to catch specific openai errors like RateLimitError, AuthenticationError, etc.
-# you need to ensure openai is imported. If not, use generic Exception handling.
-try:
-    import openai
-    OPENAI_IMPORTED = True
-except ImportError:
-    OPENAI_IMPORTED = False
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 log = logging.getLogger(__name__)
 
-# --- REMOVE Client Initialization from here ---
-# load_dotenv()
-# API_KEY = os.getenv("PERPLEXITY_API_KEY")
-# BASE_URL = "https://api.perplexity.ai"
-# client = None
-# ... (removed initialization block) ...
-# --- END REMOVAL ---
+# Load environment variables at module load time
+load_dotenv()
+# --- Use Perplexity API Key ---
+API_KEY = os.getenv("PERPLEXITY_API_KEY")
+# --- Perplexity API Base URL ---
+BASE_URL = "https://api.perplexity.ai"
+
+client = None # Initialize client as None
+
+if not API_KEY:
+    log.warning("PERPLEXITY_API_KEY environment variable not set. LLM calls will fail.")
+else:
+    try:
+        # --- Configure OpenAI client for Perplexity ---
+        client = openai.OpenAI(
+            api_key=API_KEY,
+            base_url=BASE_URL,
+        )
+        log.info("Perplexity client (via OpenAI library) initialized successfully.")
+    except Exception as e:
+         log.error(f"Failed to initialize Perplexity client: {e}", exc_info=True)
+         # client remains None
 
 # --- Define Perplexity Models ---
-INITIAL_SUMMARY_MODEL = "r1-1776"
-COMBINATION_MODEL = "r1-1776"
-STORY_MODEL = "r1-1776"
+# Using reasoning model for initial summaries
+INITIAL_SUMMARY_MODEL = "r1-1776" # Use updated model names if needed
+# Using larger reasoning model for potentially better combination
+COMBINATION_MODEL = "r1-1776" # Use updated model names if needed
+# Use a capable model for creative writing
+STORY_MODEL = "r1-1776" # Use chat model for creative tasks
 
 # --- Define prompts centrally ---
 INITIAL_SUMMARY_PROMPT_TEMPLATE = """
@@ -78,6 +84,7 @@ Before delivering your summary (SILENTLY):
 Go ahead and output just the summary now:
 """
 
+# --- Updated Combination Prompt Template ---
 COMBINATION_PROMPT_TEMPLATE = """
 # Note Compilation and Summarization System
 You are a specialized AI designed to transform disconnected notes into a coherent, well-structured document without adding or removing information from the source material.
@@ -123,7 +130,9 @@ Based on the Desired Summary Style:
 [Content organized according to level parameter]
 
 """
+# -----------------------------------------
 
+# --- Updated Hackathon Story Prompt Template ---
 HACKATHON_STORY_PROMPT_TEMPLATE = """
 # Github Context for Story Generation
 
@@ -151,20 +160,25 @@ Now, tell the tale, using the provided context. Output just the story:
 
 def call_llm(prompt, model):
     """
-    Calls the specified Perplexity model via the OpenAI-compatible API,
-    using the client initialized in app.py.
+    Calls the specified Perplexity model via the OpenAI-compatible API.
+
+    Args:
+        prompt (str): The prompt to send to the LLM.
+        model (str): The Perplexity model name to use (e.g., 'llama-3-sonar-small-32k-chat').
+
+    Returns:
+        str: The LLM's response content, cleaned of <think> blocks, or an error message string.
     """
-    # --- CHANGE: Use the imported client ---
-    if not openai_client: # Use the imported client variable name
-         log.error("LLM call attempted but Perplexity client not initialized (via app.py).")
-         return "Error: LLM service client not initialized. Check API key configuration in app.py / environment."
+    if not client:
+         log.error("LLM call attempted but Perplexity client not initialized.")
+         return "Error: LLM service client not initialized. Check API key configuration."
 
     log.info(f"Calling Perplexity model {model}. Prompt length: {len(prompt)} chars.")
     log.debug(f"Prompt starts with: {prompt[:200]}...") # Log more for debugging context
 
     try:
-        # --- CHANGE: Use the imported client ---
-        response = openai_client.chat.completions.create( # Use the imported client
+        # Use temperature=0.7 for more creative story generation
+        response = client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7
@@ -183,35 +197,24 @@ def call_llm(prompt, model):
              log.error(f"Unexpected Perplexity response structure: {response}")
              return "Error: Unexpected response structure from LLM service."
 
-    # --- Adjusted Exception Handling ---
-    # Catch specific errors only if openai library was successfully imported
-    except openai.RateLimitError if OPENAI_IMPORTED else Exception as e:
+    except openai.RateLimitError as e:
         log.warning(f"Perplexity API request exceeded rate limit: {e}")
         return "Error: LLM rate limit exceeded. Please try again later."
-    except openai.AuthenticationError if OPENAI_IMPORTED else Exception as e:
+    except openai.AuthenticationError as e:
         log.error(f"Perplexity API authentication failed: {e}")
         return "Error: LLM authentication failed. Check API key."
-    except openai.APIConnectionError if OPENAI_IMPORTED else Exception as e:
+    except openai.APIConnectionError as e:
         log.error(f"Failed to connect to Perplexity API: {e}")
         return "Error: Could not connect to LLM service."
-    except openai.APITimeoutError if OPENAI_IMPORTED else Exception as e:
+    except openai.APITimeoutError as e:
         log.warning(f"Perplexity API request timed out: {e}")
         return "Error: LLM request timed out."
-    except openai.APIStatusError if OPENAI_IMPORTED else Exception as e:
+    except openai.APIStatusError as e:
          log.error(f"Perplexity API returned an error status: {e}")
-         # Attempt to access status_code, fallback gracefully
-         status_code = getattr(e, 'status_code', 'unknown')
-         return f"Error: LLM service returned status {status_code}."
-    except Exception as e: # Catch-all for any other exceptions
+         return f"Error: LLM service returned status {e.status_code}."
+    except Exception as e:
         log.error(f"An unexpected error occurred during Perplexity call: {e}", exc_info=True)
-        # Check if the generic exception might be one of the openai ones by name
-        error_type_name = type(e).__name__
-        if "RateLimitError" in error_type_name:
-             return "Error: LLM rate limit exceeded. Please try again later."
-        if "AuthenticationError" in error_type_name:
-             return "Error: LLM authentication failed. Check API key."
-        # Add more checks if needed
-        return f"Error: An unexpected issue occurred while contacting the LLM service ({error_type_name})."
+        return "Error: An unexpected issue occurred while contacting the LLM service."
 
 
 def get_initial_summary(text_content):
@@ -229,6 +232,7 @@ def get_combined_summary(summaries_text, level="medium"):
     return call_llm(prompt, model=COMBINATION_MODEL)
 
 
+# --- Updated get_hackathon_story function ---
 def get_hackathon_story(repo_name: str, combined_context_data: str):
     """Generates the prompt and calls Perplexity for hackathon story generation."""
     if not repo_name:
