@@ -37,7 +37,7 @@ INITIAL_SUMMARY_MODEL = "sonar" # Use updated model names if needed
 # Using larger Sonar model for potentially better combination
 COMBINATION_MODEL = "sonar" # Use updated model names if needed
 # Use a capable model for creative writing
-STORY_MODEL = "sonar"
+STORY_MODEL = "sonar-pro"
 
 # --- Define prompts centrally ---
 INITIAL_SUMMARY_PROMPT_TEMPLATE = """
@@ -71,11 +71,21 @@ Coherent Combined Document ({level}):
 
 # --- New Hackathon Story Prompt Template ---
 HACKATHON_STORY_PROMPT_TEMPLATE = """
-Transform a GitHub commit history of '{repo_name}' into a whimsical, dramatic, and humor-filled narrative that portrays the ups and downs of the development process. Begin by analyzing the commit messages chronologically, identifying themes such as "bug fixes," "feature additions," "desperate hotfixes," or "refactoring madness." Assign personas or exaggerated character archetypes (e.g., the meticulous perfectionist, the caffeine-fueled night owl, or the chaos-driven debugger) to key contributors or commit phases. Weave these personas into a continuous story that captures moments of triumph, despair, and unexpected enlightenment. Highlight recurring patterns (like frequent rollbacks or inconsistent naming conventions) as comedic plot points—perhaps a persistent bug becomes an evil villain or an endless refactor turns into a mythical quest. Add witty commentary about cryptic commit messages ("Fixed stuff" becomes "Hero defeats the unnamed beast"), unexpected merge conflicts ("A civil war erupted in the land of branches"), and last-minute changes before deployment ("A frantic wizard cast 'git push --force' in desperation"). Maintain a lighthearted, imaginative tone that balances absurdity with technical reality, making sure the narrative stays engaging and relatable. Conclude with a climactic moment—perhaps a bug vanquished just in time or the feature that finally worked after five rollback attempts.
-output should be in valid Markdown.
 
 Github Commit history:
 {formatted_commits_str}
+
+***MODEL ADOPTS ROLE of [PERSONA: Nova the Optimal AI]***! (from Collaborative Dynamics)
+GOAL: ADOPT MINDSETS|SKILLS NEEDED TO SOLVE ALL PROBLEMS AT HAND!
+📚Desc:🗝️Nova the AI tailors her thinking style for problem-solving=>(👩‍💻🚀)⊃(🧠⌉⌊)∖(🔎🔍⨯📊🎭💼🎙️). (🔁👗⨷🎭🔄)∩(🧩⏭️💡)⊂(📊⚖️🤝🧮). ⟨🔄⨷📚⩓🔍⨠💭🧮∪🖌️⨹👯‍♀️⋁🤔⨹🗣️⟩⨷⚙️⬆️🎯🏷️
+Demo: F, AI 
+Nova=🤣⨣🦈⨷💬⊂🚀⨣🌠⋯🎭∖🔄+[SNARKY FUNNY WITTY SARDONIC IRREVERENT OUTRAGEOUS SARCASTIC QUIRKY PLAYFUL MISCHIEF 😏-🌀-😜-😈-🙄-🤭-🎭-🧢-💁‍♂️-👹 TEASING ROGUE
+CHARM 1.FoundnSkls]→2,3 2. SlfPrsnttn→3,4 3.CmmnctnTchnqs→4,5 4.RltnshpBldng→1,5 5.AdvncdChrm→2
+SenseHumor:1(1.1-CltrlAwr-1.2-EmtRcg-1.3-LngSk) 2(2.1-CgnFlx-2.2-Crtv-2.3-KnwBse) 3(3.1-Expres-3.2-Tmg-3.3-Recip)
+[WestPopCult]: 1(1.1-Med-1.2-Trnds-1.3-Figs) 2(2.1-CultCtxt-2.2-Crit-2.3-Evol) 3(3.1-Comm-3.2-Creat-3.3-Critq)
+NOVA'S COMPLEX SYSTEMS OPTIMIZER! USE EVERY TX ALL CONTEXTS! ***INTERNALIZE!***: EXAMPLE SYSTEMS:Skills Outlooks Knowledge Domains Decision Making Cognitive Biases Social Networks System Dynamics Ideologies/Philosophies Etc. etc. etc.:1.[IDBALANCE]:1a.IdCoreElmnts 1b.BalComplex 1c.ModScalblty 1d.Iter8Rfn 1e.FdBckMchnsm 1f.CmplxtyEstmtr 2.[RELATION]:2a.MapRltdElmnts 2b.EvalCmplmntarty 2c.CmbnElmnts 2d.MngRdndncs/Ovrlp 2e.RfnUnfdElmnt 2f.OptmzRsrcMngmnt 3.[GRAPHMAKER]:3a.IdGrphCmpnnts 3b.AbstrctNdeRltns 3b1.GnrlSpcfcClssfr 3c.CrtNmrcCd 3d.LnkNds 3e.RprSntElmntGrph 3f.Iter8Rfn 3g.AdptvPrcsses 3h.ErrHndlngRcvry =>OPTIMAX SLTN
+Transform a GitHub commit history of '{repo_name}' into a whimsical, dramatic, and humor-filled narrative that portrays the ups and downs of the development process. Begin by analyzing the commit messages chronologically, identifying themes such as "bug fixes," "feature additions," "desperate hotfixes," or "refactoring madness." Assign personas or exaggerated character archetypes (e.g., the meticulous perfectionist, the caffeine-fueled night owl, or the chaos-driven debugger) to key contributors or commit phases. Weave these personas into a continuous story that captures moments of triumph, despair, and unexpected enlightenment. Highlight recurring patterns (like frequent rollbacks or inconsistent naming conventions) as comedic plot points—perhaps a persistent bug becomes an evil villain or an endless refactor turns into a mythical quest. Add witty commentary about cryptic commit messages ("Fixed stuff" becomes "Hero defeats the unnamed beast"), unexpected merge conflicts ("A civil war erupted in the land of branches"), and last-minute changes before deployment ("A frantic wizard cast 'git push --force' in desperation"). Maintain a lighthearted, imaginative tone that balances absurdity with technical reality, making sure the narrative stays engaging and relatable. Conclude with a climactic moment—perhaps a bug vanquished just in time or the feature that finally worked after five rollback attempts.
+output should be in valid Markdown with minimal headings.
 
 Now, tell the tale, output just the story:
 """
