@@ -6,49 +6,27 @@ import shutil
 import logging
 import threading
 import markdown
-from datetime import datetime
+from datetime import datetime # Import datetime for formatting
 from flask import Flask, request, render_template, redirect, url_for, session, flash, jsonify, send_file
 from flask_session import Session
 from flask_sse import sse
 from dotenv import load_dotenv
-# --- ADD OpenAI Import Here ---
-import openai # <<< Import openai here
 
-# --- Configuration ---
-load_dotenv() # <<< Load .env early
+# Import PocketFlow flow creation function (if still needed, otherwise remove)
+# from pocketflow_logic.flow import create_summary_flow
 
-# --- Initialize OpenAI Client Globally Here ---
-openai_client = None # <<< Define global client variable
-API_KEY = os.getenv("PERPLEXITY_API_KEY")
-BASE_URL = "https://api.perplexity.ai"
-
-if not API_KEY:
-    # Use basic logging since Flask app logger isn't set up yet
-    logging.warning("PERPLEXITY_API_KEY environment variable not set. LLM calls will fail.")
-else:
-    try:
-        openai_client = openai.OpenAI( # <<< Initialize the client
-            api_key=API_KEY,
-            base_url=BASE_URL,
-        )
-        # Use basic logging here too, before app logger is configured
-        logging.info("Perplexity client (via OpenAI library) initialized successfully in app.py.")
-    except Exception as e:
-         logging.error(f"Failed to initialize Perplexity client in app.py: {e}", exc_info=True)
-         openai_client = None # Ensure it's None on failure
-# --- End OpenAI Client Initialization ---
-
-# --- Now import your project modules that might depend on the client ---
-# Import utilities AFTER client might be initialized
-from pocketflow_logic.utils import file_handler, llm_caller # llm_caller now imports the client from here
+# Import utilities
+from pocketflow_logic.utils import file_handler, llm_caller # <<< Ensure llm_caller is imported
+# --- ADD Import for GitHub utils and exceptions ---
 from pocketflow_logic.utils import github_utils
 from pocketflow_logic.utils.github_utils import GitHubUrlError, RepoNotFoundError, GitHubApiError
+# -------------------------------------------------
 
-# --- Flask App Setup ---
+# --- Configuration ---
+load_dotenv()
 app = Flask(__name__)
-# Configure Flask app logging AFTER creating the app instance
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
-app.logger.setLevel(logging.INFO) # Now use the app's logger
+app.logger.setLevel(logging.INFO)
 
 # --- Flask-Session Configuration ---
 app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "dev-secret-key-replace-me!")
@@ -63,6 +41,8 @@ app.config["REDIS_URL"] = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 app.register_blueprint(sse, url_prefix='/stream')
 
 # --- Simple In-Memory Task Storage (HACKATHON ONLY) ---
+# Store results for both summarizer and story generator
+# Structure: { task_id: {'type': 'summary'/'story', 'result': ..., 'errors': [], 'state': 'processing'/'completed'/'error'} }
 task_results = {}
 
 # Security check for default SECRET_KEY
@@ -77,22 +57,27 @@ app.config['MAX_FILES'] = file_handler.MAX_FILES
 app.config['MAX_FILE_SIZE_MB'] = file_handler.MAX_FILE_SIZE_MB
 
 # --- Background Task Function (Summarizer) ---
-# (run_summarizer_async remains unchanged)
+# (run_summarizer_async remains unchanged from previous version)
 def run_summarizer_async(task_id, temp_file_details, summary_level, original_filenames):
     """Runs the file summarization in a background thread."""
+    # This function assumes PocketFlow is NOT used for simplicity now.
+    # If PocketFlow is needed, re-integrate its logic here.
     with app.app_context():
         app.logger.info(f"Summarizer Task {task_id}: Background thread started.")
         task_results[task_id] = {'type': 'summary', 'state': 'processing', 'errors': []}
         final_state = "unknown"
         all_summaries = {}
         errors = []
-        temp_dir = None
+        temp_dir = None # Initialize temp_dir
 
         try:
             sse.publish({"type": "status", "message": "Initializing summarization..."}, channel=task_id)
 
+            # --- Simplified Logic (No PocketFlow) ---
+            # 1. Process each file individually
             total_files = len(temp_file_details)
             if total_files > 0:
+                 # Get temp_dir from the first file detail (assuming they are all in the same dir)
                  temp_dir = os.path.dirname(temp_file_details[0]['temp_path'])
 
             for i, file_detail in enumerate(temp_file_details):
@@ -112,7 +97,6 @@ def run_summarizer_async(task_id, temp_file_details, summary_level, original_fil
                     continue
 
                 sse.publish({"type": "status", "message": f"Requesting summary for '{original_name}'..."}, channel=task_id)
-                # Calls llm_caller which now uses the global openai_client
                 summary = llm_caller.get_initial_summary(content)
                 all_summaries[original_name] = summary
                 if isinstance(summary, str) and summary.startswith("Error:"):
@@ -121,6 +105,7 @@ def run_summarizer_async(task_id, temp_file_details, summary_level, original_fil
                 else:
                     sse.publish({"type": "status", "message": f"Received summary for '{original_name}'."}, channel=task_id)
 
+            # 2. Combine summaries if any were successful
             valid_summaries = {name: summ for name, summ in all_summaries.items() if isinstance(summ, str) and not summ.startswith("Error:") and not summ.startswith("Skipped:")}
 
             if not valid_summaries:
@@ -130,9 +115,9 @@ def run_summarizer_async(task_id, temp_file_details, summary_level, original_fil
             else:
                 sse.publish({"type": "status", "message": f"Combining {len(valid_summaries)} summaries ({summary_level} level)..."}, channel=task_id)
                 combined_text = "\n\n".join([f"--- Summary for {name} ---\n{summary}" for name, summary in valid_summaries.items()])
-                # Calls llm_caller which now uses the global openai_client
                 final_summary = llm_caller.get_combined_summary(combined_text, level=summary_level)
 
+                # Append notes about failed files
                 failed_files = [name for name, summ in all_summaries.items() if name not in valid_summaries]
                 if failed_files:
                     note = f"\n\nNote: The following files could not be summarized or were skipped: {', '.join(failed_files)}"
@@ -150,6 +135,7 @@ def run_summarizer_async(task_id, temp_file_details, summary_level, original_fil
             task_results.setdefault(task_id, {})["result"] = final_summary
             if errors:
                  task_results.setdefault(task_id, {}).setdefault("errors", []).extend(errors)
+                 # If we got some summaries but combination failed, still mark as error
                  if final_state != "error": final_state = "error"
 
         except Exception as e:
@@ -169,6 +155,7 @@ def run_summarizer_async(task_id, temp_file_details, summary_level, original_fil
             app.logger.info(f"Summarizer Task {task_id}: FINAL state={results_entry['state']}, errors={results_entry['errors']}, result_preview='{str(results_entry.get('result'))[:100]}...'")
             sse.publish({"type": results_entry['state'], "message": f"Summarization {results_entry['state']}."}, channel=task_id)
 
+            # Cleanup temp files
             if temp_dir and os.path.exists(temp_dir):
                  try:
                      shutil.rmtree(temp_dir)
@@ -178,7 +165,6 @@ def run_summarizer_async(task_id, temp_file_details, summary_level, original_fil
 
 
 # --- Background Task Function (Story Generator) --- UPDATED ---
-# (run_story_generation_async remains unchanged structurally, relies on llm_caller)
 def run_story_generation_async(task_id: str, github_url: str):
     """Fetches commits AND README, then generates a hackathon story."""
     with app.app_context():
@@ -189,57 +175,69 @@ def run_story_generation_async(task_id: str, github_url: str):
         error_message = None
         commits = []
         readme_content = None
-        combined_context = ""
+        combined_context = "" # Initialize combined context
 
         try:
+            # 1. Validate URL and Extract Owner/Repo
             sse.publish({"type": "status", "message": "Validating GitHub URL..."}, channel=task_id)
             try:
                 owner, repo = github_utils.parse_github_url(github_url)
             except GitHubUrlError as e:
                 error_message = f"Invalid GitHub URL: {e}"
-                raise
+                raise # Re-raise to be caught by the outer try/except
 
+            # --- 2. Fetch README Content ---
             sse.publish({"type": "status", "message": f"Fetching README for {owner}/{repo}..."}, channel=task_id)
             try:
                 readme_content = github_utils.get_readme_content(owner, repo)
                 if readme_content:
                     sse.publish({"type": "status", "message": "README found."}, channel=task_id)
                 else:
+                    # This covers both 404 and non-fatal errors in get_readme_content
                     sse.publish({"type": "status", "message": "README not found or unreadable. Proceeding without it."}, channel=task_id)
             except GitHubApiError as e:
+                # Log API errors (like rate limits) but allow proceeding if commits can still be fetched
                 app.logger.warning(f"Story Task {task_id}: GitHub API error fetching README for {owner}/{repo}: {e}. Attempting to proceed with commits.")
                 task_results[task_id].setdefault("errors", []).append(f"Warning: Could not fetch README due to API error ({e}). Story context may be limited.")
                 sse.publish({"type": "status", "message": f"Warning: Error fetching README ({e}). Trying commits only."}, channel=task_id)
-                readme_content = None
+                readme_content = None # Ensure it's None
             except Exception as e_readme:
+                 # Catch any other unexpected error during README fetch
                  error_id_readme = uuid.uuid4()
                  app.logger.error(f"Story Task {task_id}: Unexpected error fetching README for {owner}/{repo} (Error ID: {error_id_readme}).", exc_info=True)
                  task_results[task_id].setdefault("errors", []).append(f"Warning: Unexpected error fetching README (Ref: {error_id_readme}).")
                  sse.publish({"type": "status", "message": "Warning: Unexpected error fetching README. Trying commits only."}, channel=task_id)
-                 readme_content = None
+                 readme_content = None # Ensure it's None
+            # --- End Fetch README ---
 
+            # 3. Fetch Commits
             sse.publish({"type": "status", "message": f"Fetching recent commits for {owner}/{repo}..."}, channel=task_id)
             try:
                 commits = github_utils.get_recent_commits(owner, repo, days=3, limit=30)
             except RepoNotFoundError as e:
-                error_message = str(e)
+                error_message = str(e) # If repo not found, we can't get commits or README
                 raise
             except GitHubApiError as e:
+                # If commits fail, we might still have README, but story is likely poor. Treat as failure.
                 error_message = f"GitHub API Error fetching commits: {e}"
                 raise
 
+            # Check if we have *any* content (commits or README)
             if not commits and not readme_content:
                  error_message = f"No recent commits found and no README available for '{owner}/{repo}'. Cannot generate story."
                  final_state = "error"
                  task_results.setdefault(task_id, {}).setdefault("errors", []).append(error_message)
                  task_results.setdefault(task_id, {})["result"] = f"Could not generate story: {error_message}"
                  app.logger.warning(f"Story Task {task_id}: {error_message}")
+                 # Proceed to finally without calling LLM
 
             else:
+                # 4. Format Context (README + Commits)
                 sse.publish({"type": "status", "message": "Formatting context for AI storyteller..."}, channel=task_id)
                 context_parts = []
 
                 if readme_content:
+                    # Limit README size to avoid excessive context length (e.g., first 10000 chars)
                     readme_limit = 10000
                     truncated_readme = readme_content[:readme_limit]
                     if len(readme_content) > readme_limit:
@@ -247,52 +245,57 @@ def run_story_generation_async(task_id: str, github_url: str):
                         app.logger.info(f"Story Task {task_id}: Truncated README for context (limit {readme_limit} chars).")
 
                     context_parts.append("--- README CONTENT START ---")
-                    context_parts.append(truncated_readme)
+                    context_parts.append(truncated_readme) # Use potentially truncated content
                     context_parts.append("--- README CONTENT END ---")
 
                 if commits:
                     formatted_commits_list = []
                     for i, c in enumerate(commits):
                         try:
+                            # Attempt to parse ISO date string, handle potential errors
                             dt_obj = datetime.fromisoformat(c['date'].replace('Z', '+00:00'))
                             formatted_date = dt_obj.strftime('%Y-%m-%d %H:%M UTC')
                         except (ValueError, TypeError, KeyError):
-                            formatted_date = c.get('date', 'Unknown Date')
+                            formatted_date = c.get('date', 'Unknown Date') # Fallback
                         message_preview = c.get('message', '')[:100] + ('...' if len(c.get('message', '')) > 100 else '')
                         formatted_commits_list.append(
                             f"{i+1}. Author: {c.get('author', 'N/A')}, Date: {formatted_date}, Message: {message_preview}"
                         )
                     formatted_commits_str = "\n".join(formatted_commits_list)
 
-                    context_parts.append("\n--- COMMIT HISTORY START ---")
+                    context_parts.append("\n--- COMMIT HISTORY START ---") # Add newline for separation
                     context_parts.append(formatted_commits_str)
                     context_parts.append("--- COMMIT HISTORY END ---")
                     sse.publish({"type": "status", "message": f"Found {len(commits)} recent commits."}, channel=task_id)
-                elif not readme_content:
+                elif not readme_content: # Should not happen due to earlier check, but safeguard
                      app.logger.error(f"Story Task {task_id}: Logic error - No commits and no readme, but proceeded.")
                      raise ValueError("Internal error: No content to generate story from.")
 
-                combined_context = "\n\n".join(context_parts)
 
+                combined_context = "\n\n".join(context_parts) # Join sections with double newline
+
+                # 5. Call LLM for Story
                 sse.publish({"type": "status", "message": "Asking the AI storyteller..."}, channel=task_id)
-                # Calls llm_caller which now uses the global openai_client
+                # Pass the combined context string
                 story_result = llm_caller.get_hackathon_story(repo, combined_context)
 
                 if isinstance(story_result, str) and story_result.startswith("Error:"):
                     error_message = f"Story Generation Failed: {story_result}"
-                    raise ValueError(error_message)
+                    raise ValueError(error_message) # Treat LLM error as exception
 
+                # 6. Success
                 task_results.setdefault(task_id, {})["result"] = story_result
                 final_state = "completed"
                 sse.publish({"type": "status", "message": "Story generation complete!"}, channel=task_id)
 
         except (GitHubUrlError, RepoNotFoundError, GitHubApiError, ValueError, Exception) as e:
             error_id = uuid.uuid4()
-            if not error_message:
+            if not error_message: # Ensure a generic message if specific one wasn't set
                  error_message = f"A critical background error occurred (Ref: {error_id})."
+            # Check if it's a known GitHub error type before logging the full trace for those
             if isinstance(e, (GitHubUrlError, RepoNotFoundError, GitHubApiError)):
                  app.logger.error(f"Story Task {task_id}: Background task failed. Error: {error_message}")
-            else:
+            else: # Log full trace for unexpected errors
                  app.logger.error(f"Story Task {task_id}: Background task failed. Error: {e} (Error ID: {error_id}).", exc_info=True)
 
             task_results.setdefault(task_id, {}).setdefault("errors", []).append(error_message)
@@ -323,8 +326,9 @@ def index():
     task_id_to_clear = None
     is_processing_summary = False
     is_processing_story = False
-    active_task_id_for_template = None
+    active_task_id_for_template = None # Store the ID of the task currently processing
 
+    # --- RESULT CHECKING LOGIC ---
     task_to_check = None
     task_type = None
 
@@ -348,37 +352,43 @@ def index():
             app.logger.info(f"{task_type.capitalize()} Task {task_to_check}: Still processing.")
             if task_type == 'summary':
                 is_processing_summary = True
-            else:
+            else: # task_type == 'story'
                 is_processing_story = True
-            active_task_id_for_template = task_to_check
+            active_task_id_for_template = task_to_check # Use the ID found
         else:
              app.logger.warning(f"Task {task_to_check} found with unexpected state '{task_state}'. Treating as error and popping.")
-             results = task_results.pop(task_to_check, {'state': 'error', 'errors': [f"Task ended in unexpected state: {task_state}"], 'type': task_type})
-             results['state'] = 'error'
+             results = task_results.pop(task_to_check, {'state': 'error', 'errors': [f"Task ended in unexpected state: {task_state}"], 'type': task_type}) # Pop safely
+             results['state'] = 'error' # Force error state
              task_id_to_clear = f'current_{task_type}_task_id'
 
     elif task_to_check:
          app.logger.warning(f"Task {task_to_check} (Type: {task_type}) found in session but not in task_results. Clearing session.")
          task_id_to_clear = f'current_{task_type}_task_id'
 
+
+    # Clear session variables if results were retrieved or task was invalid
     if task_id_to_clear:
         session.pop(task_id_to_clear, None)
 
+    # Clear download caches if NOT processing that specific task type
     if not is_processing_summary:
          session.pop('download_summary_raw', None)
     if not is_processing_story:
          session.pop('story_result_raw', None)
+    # --- END RESULT CHECKING LOGIC ---
 
+
+    # Prepare results for template based on popped results
     summary_html, summary_raw = None, None
     story_html, story_raw = None, None
 
-    if results:
+    if results: # Only process if results were actually popped
         errors = results.get("errors")
         if errors:
             for error in errors: flash(error, 'error')
 
         result_content = results.get("result")
-        result_type = results.get('type')
+        result_type = results.get('type') # Get type from popped results
 
         if result_type == 'summary':
             if isinstance(result_content, str) and result_content.startswith("Error:"):
@@ -417,6 +427,7 @@ def index():
     app.logger.info(f"Rendering index. Processing Summary: {is_processing_summary}, Processing Story: {is_processing_story}")
     app.logger.info(f"Summary Result Available: {summary_raw is not None}, Story Result Available: {story_raw is not None}")
 
+    # Ensure the active task ID is passed correctly to the template
     template_summary_task_id = summary_task_id if is_processing_summary else None
     template_story_task_id = story_task_id if is_processing_story else None
 
@@ -428,13 +439,14 @@ def index():
                            story_raw=story_raw,
                            is_processing_summary=is_processing_summary,
                            is_processing_story=is_processing_story,
-                           summary_task_id=template_summary_task_id,
-                           story_task_id=template_story_task_id
+                           summary_task_id=template_summary_task_id, # Pass correct active ID
+                           story_task_id=template_story_task_id      # Pass correct active ID
                            )
 
 
 @app.route('/process', methods=['POST'])
 def process_files():
+    # Clear potentially active tasks
     session.pop('current_story_task_id', None)
     session.pop('current_summary_task_id', None)
     session.pop('download_summary_raw', None)
@@ -453,7 +465,7 @@ def process_files():
         flash(f"Invalid summary level specified, using default 'Medium'.", 'warning')
         summary_level = 'medium'
 
-    temp_dir_base = None
+    temp_dir_base = None # Initialize variable
     processing_errors = []
     try:
         temp_dir_base = tempfile.mkdtemp()
@@ -499,6 +511,7 @@ def process_files():
 
 @app.route('/generate_story', methods=['POST'])
 def generate_story():
+    # Clear potentially active tasks
     session.pop('current_summary_task_id', None)
     session.pop('download_summary_raw', None)
     session.pop('current_story_task_id', None)
@@ -509,14 +522,16 @@ def generate_story():
         flash('GitHub repository URL is required.', 'error')
         return redirect(url_for('index'))
 
-    github_url = github_url.strip()
+    github_url = github_url.strip() # Remove leading/trailing whitespace
 
+    # Basic check before starting thread
     try:
+        # Use the validation logic before starting the thread
         owner, repo = github_utils.parse_github_url(github_url)
     except GitHubUrlError as e:
          flash(f'Invalid GitHub URL: {e}', 'error')
          return redirect(url_for('index'))
-    except Exception as e:
+    except Exception as e: # Catch any other parsing error
         flash(f'Error validating URL: {e}', 'error')
         return redirect(url_for('index'))
 
@@ -563,5 +578,4 @@ if __name__ == '__main__':
     if not os.path.exists(app.config["SESSION_FILE_DIR"]):
         os.makedirs(app.config["SESSION_FILE_DIR"])
         app.logger.info(f"Created session directory: {app.config['SESSION_FILE_DIR']}")
-    # Use threaded=True for development with SSE, Gunicorn handles this in production
     app.run(debug=True, host='0.0.0.0', port=5000, threaded=True)
