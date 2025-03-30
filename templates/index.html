@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pocket Summarizer & Storyteller - Bearhacks Edition</title>
+    <title>Pocket Summarizer - Bearhacks Edition</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -19,7 +19,7 @@
     <input type="hidden" id="story-task-id" value="{{ story_task_id if story_task_id else '' }}">
 
     <header class="app-header">
-        <h1>Pocket Summarizer & Storyteller <span class="theme-accent">(Bearhacks Edition)</span></h1>
+        <h1>Pocket Summarizer<span class="theme-accent">(Bearhacks Edition)</span></h1>
         
         <!-- Easter Egg: Bear Mode Toggle -->
         <button id="bear-toggle" class="bear-toggle" aria-label="Bear toggle">
@@ -127,7 +127,7 @@
                 <div class="spinner"></div>
                 <p id="processing-task-name">Processing...</p>
                 <div class="status-log live-status-area" id="live-status-log">
-                    <h4>Live Status:</h4>
+                    <h4>Status:</h4>
                     <p id="latest-status" class="latest-status-message">Initializing...</p>
                 </div>
             </section>
