@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: pocket-summarizer
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      - key: PERPLEXITY_API_KEY
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: pocket-summarizer-redis
+          property: connectionString
+
+  - type: redis
+    name: pocket-summarizer-redis
+    ipAllowList:
+      - source: 0.0.0.0/0
+        description: everywhere
+    plan: free
