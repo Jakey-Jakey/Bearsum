@@ -8,6 +8,7 @@ import shutil
 import logging
 import threading
 import markdown
+import redis
 from datetime import datetime # Import datetime for formatting
 from flask import Flask, request, render_template, redirect, url_for, session, flash, jsonify, send_file
 from flask_session import Session
@@ -45,7 +46,46 @@ app.register_blueprint(sse, url_prefix='/stream')
 # --- Simple In-Memory Task Storage (HACKATHON ONLY) ---
 # Store results for both summarizer and story generator
 # Structure: { task_id: {'type': 'summary'/'story', 'result': ..., 'errors': [], 'state': 'processing'/'completed'/'error'} }
-task_results = {}
+def store_task_result(task_id, result_type, state, result, errors=None):
+    """Stores task result in Redis."""
+    if errors is None:
+        errors = []
+    
+    try:
+        redis_conn = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
+        result_data = {
+            'type': result_type,
+            'state': state,
+            'result': result,
+            'errors': errors
+        }
+        # Store with expiration (1 hour)
+        redis_conn.setex(f"task_result:{task_id}", 3600, json.dumps(result_data))
+        app.logger.info(f"Stored task {task_id} result in Redis (state={state})")
+    except Exception as e:
+        app.logger.error(f"Error storing task result in Redis: {e}", exc_info=True)
+
+def get_task_result(task_id):
+    """Retrieves task result from Redis."""
+    try:
+        redis_conn = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
+        result_data = redis_conn.get(f"task_result:{task_id}")
+        
+        if result_data:
+            return json.loads(result_data)
+        return None
+    except Exception as e:
+        app.logger.error(f"Error retrieving task result from Redis: {e}", exc_info=True)
+        return None
+    
+def delete_task_result(task_id):
+    """Deletes task result from Redis."""
+    try:
+        redis_conn = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
+        redis_conn.delete(f"task_result:{task_id}")
+        app.logger.info(f"Deleted task {task_id} result from Redis")
+    except Exception as e:
+        app.logger.error(f"Error deleting task result from Redis: {e}", exc_info=True)
 
 # Security check for default SECRET_KEY
 if not app.debug and app.config["SECRET_KEY"] == "dev-secret-key-replace-me!":
@@ -66,7 +106,7 @@ def run_summarizer_async(task_id, temp_file_details, summary_level, original_fil
     # If PocketFlow is needed, re-integrate its logic here.
     with app.app_context():
         app.logger.info(f"Summarizer Task {task_id}: Background thread started.")
-        task_results[task_id] = {'type': 'summary', 'state': 'processing', 'errors': []}
+        store_task_result(task_id, 'summary', 'processing', None, [])
         final_state = "unknown"
         all_summaries = {}
         errors = []
@@ -134,21 +174,15 @@ def run_summarizer_async(task_id, temp_file_details, summary_level, original_fil
                 else:
                      final_state = "completed"
 
-            task_results.setdefault(task_id, {})["result"] = final_summary
-            if errors:
-                 task_results.setdefault(task_id, {}).setdefault("errors", []).extend(errors)
-                 # If we got some summaries but combination failed, still mark as error
-                 if final_state != "error": final_state = "error"
-
-        except Exception as e:
-            error_id = uuid.uuid4()
-            app.logger.error(f"Summarizer Task {task_id}: Unhandled exception (Error ID: {error_id}).", exc_info=True)
-            task_results.setdefault(task_id, {}).setdefault("errors", []).append(f"A critical background error occurred (Ref: {error_id}).")
-            task_results.setdefault(task_id, {})["result"] = f"Processing failed due to a background error (Ref: {error_id})."
-            final_state = "error"
+            store_task_result(task_id, 'summary', final_state, final_summary, errors)
+            
         finally:
-            results_entry = task_results.setdefault(task_id, {})
-            results_entry["state"] = final_state if final_state != "unknown" else "error"
+            current_result = get_task_result(task_id)
+            if current_result:
+                final_state = final_state if final_state != "unknown" else "error"
+                store_task_result(task_id, 'summary', final_state, 
+                     current_result.get('result', "Error: Summarization failed unexpectedly."),
+                     current_result.get('errors', []))
             results_entry.setdefault("result", "Error: Summarization failed unexpectedly.")
             results_entry.setdefault("errors", [])
             if not results_entry["errors"] and results_entry["state"] == "error":
@@ -171,7 +205,7 @@ def run_story_generation_async(task_id: str, github_url: str):
     """Fetches commits AND README, then generates a hackathon story."""
     with app.app_context():
         app.logger.info(f"Story Task {task_id}: Background thread started for URL: {github_url}")
-        task_results[task_id] = {'type': 'story', 'state': 'processing', 'errors': []}
+        store_task_result(task_id, 'story', 'processing', None, [])
         owner, repo = None, None
         final_state = "unknown"
         error_message = None
@@ -228,8 +262,7 @@ def run_story_generation_async(task_id: str, github_url: str):
             if not commits and not readme_content:
                  error_message = f"No recent commits found and no README available for '{owner}/{repo}'. Cannot generate story."
                  final_state = "error"
-                 task_results.setdefault(task_id, {}).setdefault("errors", []).append(error_message)
-                 task_results.setdefault(task_id, {})["result"] = f"Could not generate story: {error_message}"
+                 store_task_result(task_id, 'story', "error", f"Could not generate story: {error_message}", [error_message])
                  app.logger.warning(f"Story Task {task_id}: {error_message}")
                  # Proceed to finally without calling LLM
 
@@ -286,7 +319,7 @@ def run_story_generation_async(task_id: str, github_url: str):
                     raise ValueError(error_message) # Treat LLM error as exception
 
                 # 6. Success
-                task_results.setdefault(task_id, {})["result"] = story_result
+                store_task_result(task_id, 'story', "completed", story_result, [])
                 final_state = "completed"
                 sse.publish({"type": "status", "message": "Story generation complete!"}, channel=task_id)
 
@@ -305,12 +338,12 @@ def run_story_generation_async(task_id: str, github_url: str):
             final_state = "error"
 
         finally:
-            results_entry = task_results.setdefault(task_id, {})
-            results_entry["state"] = final_state if final_state != "unknown" else "error"
-            results_entry.setdefault("result", "Error: Story generation failed unexpectedly.")
-            results_entry.setdefault("errors", [])
-            if not results_entry["errors"] and results_entry["state"] == "error":
-                 results_entry["errors"].append("An unknown error occurred during story generation.")
+            current_result = get_task_result(task_id)
+            if current_result:
+                final_state = final_state if final_state != "unknown" else "error"
+                store_task_result(task_id, 'summary', final_state, 
+                     current_result.get('result', "Error: Summarization failed unexpectedly."),
+                     current_result.get('errors', []))
 
             app.logger.info(f"Story Task {task_id}: FINAL state={results_entry['state']}, errors={results_entry['errors']}, result_preview='{str(results_entry.get('result'))[:100]}...'")
             sse.publish({"type": results_entry['state'], "message": f"Story generation {results_entry['state']}."}, channel=task_id)
@@ -341,13 +374,15 @@ def index():
         task_to_check = story_task_id
         task_type = 'story'
 
-    if task_to_check and task_to_check in task_results:
-        task_entry = task_results.get(task_to_check)
-        task_state = task_entry.get('state')
+    if task_to_check:
+        task_entry = get_task_result(task_to_check)
+        if task_entry:
+            task_state = task_entry.get('state')
         app.logger.info(f"Checking Task {task_to_check} (Type: {task_type}). Found in task_results with state: {task_state}")
 
         if task_state in ['completed', 'error']:
-            results = task_results.pop(task_to_check)
+            results = task_entry
+            delete_task_result(task_to_check)
             task_id_to_clear = f'current_{task_type}_task_id'
             app.logger.info(f"{task_type.capitalize()} Task {task_to_check}: Results retrieved (state={task_state}) and cleared.")
         elif task_state == 'processing':
