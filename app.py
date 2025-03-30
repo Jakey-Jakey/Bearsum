@@ -353,8 +353,7 @@ def run_story_generation_async(task_id: str, github_url: str):
 # (index, process_files, generate_story, download_summary routes remain unchanged)
 @app.route('/', methods=['GET'])
 def index():
-    app.logger.info(f"Index route accessed. Session: {dict(session)}, Task Results Keys: {list(task_results.keys())}")
-
+    app.logger.info(f"Index route accessed. Session: {dict(session)}")
     summary_task_id = session.get('current_summary_task_id')
     story_task_id = session.get('current_story_task_id')
     results = None
