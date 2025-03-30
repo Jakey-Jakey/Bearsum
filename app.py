@@ -363,50 +363,53 @@ def index():
     is_processing_story = False
     active_task_id_for_template = None # Store the ID of the task currently processing
 
-    # --- RESULT CHECKING LOGIC ---
+# --- RESULT CHECKING LOGIC ---
     task_to_check = None
     task_type = None
-
+    task_state = None
+    
     if summary_task_id:
         task_to_check = summary_task_id
         task_type = 'summary'
     elif story_task_id:
         task_to_check = story_task_id
         task_type = 'story'
-    task_state = None
-
+    
     if task_to_check:
+        # Try to get the task from Redis
         task_entry = get_task_result(task_to_check)
         
         if task_entry:
+            # Task found in Redis
             task_state = task_entry.get('state')
             app.logger.info(f"Task {task_to_check} (Type: {task_type}). Found in Redis with state: {task_state}")
             
-            if task_state in ['completed', 'error']:
+            if task_state == 'completed' or task_state == 'error':
+                # Task is finished, get results and clear
                 results = task_entry
                 delete_task_result(task_to_check)
                 task_id_to_clear = f'current_{task_type}_task_id'
-                app.logger.info(f"{task_type.capitalize()} Task {task_to_check}: Results retrieved (state={task_state}) and cleared.")
             elif task_state == 'processing':
-                app.logger.info(f"{task_type.capitalize()} Task {task_to_check}: Still processing.")
+                # Task is still running
                 if task_type == 'summary':
                     is_processing_summary = True
-                else:  # task_type == 'story'
+                else:
                     is_processing_story = True
                 active_task_id_for_template = task_to_check
             else:
+                # Unknown state, treat as error
                 app.logger.warning(f"Task {task_to_check} found with unexpected state '{task_state}'. Treating as error.")
                 results = {'state': 'error', 'errors': [f"Task ended in unexpected state: {task_state}"], 'type': task_type}
                 delete_task_result(task_to_check)
                 task_id_to_clear = f'current_{task_type}_task_id'
         else:
-            # Task not found in Redis but is in the session
+            # Task not in Redis but in session
             app.logger.info(f"Task {task_to_check} (Type: {task_type}) not found in Redis. It may be starting or have been cleared.")
             
-            # Instead of immediately treating as error, check if it just started
+            # Mark as processing for now
             if task_type == 'summary':
                 is_processing_summary = True
-            else:  # task_type == 'story'
+            else:
                 is_processing_story = True
             active_task_id_for_template = task_to_check
         else: # task_type == 'story'
