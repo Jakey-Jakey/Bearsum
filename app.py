@@ -372,9 +372,9 @@ def index():
     elif story_task_id:
         task_to_check = story_task_id
         task_type = 'story'
+        task_state = None
 
     if task_to_check:
-        task_state = None
         task_entry = get_task_result(task_to_check)
         if task_entry and task_state:
             app.logger.info(f"Checking Task {task_to_check} (Type: {task_type}). Found in Redis with state: {task_state}")
