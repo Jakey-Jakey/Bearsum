@@ -2,6 +2,8 @@
 
 A polished web application built with Flask that offers powerful AI-powered file summarization. This tool leverages the Perplexity AI API (using `r1-1776` models) to generate high-quality, readable summaries from text files.
 
+![Pocket Summarizer Screenshot](screenshot.png)
+
 ## Features
 
 ### Core Functionality
