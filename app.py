@@ -581,16 +581,15 @@ def download_summary():
         mem_file, as_attachment=True, download_name='summary.txt', mimetype='text/plain; charset=utf-8'
     )
 
-# --- Ensure session directory exists (for filesystem fallback ONLY) ---
-# This check runs at import time if SESSION_TYPE is filesystem
-session_dir_fallback = app.config.get("SESSION_FILE_DIR")
-if app.config["SESSION_TYPE"] == "filesystem" and session_dir_fallback and not os.path.exists(session_dir_fallback):
-     try:
-        os.makedirs(session_dir_fallback)
-        app.logger.info(f"Created session directory for fallback at startup: {session_dir_fallback}")
-     except OSError as e:
-        # This might happen due to permissions or race conditions
-        app.logger.warning(f"Could not create session directory for fallback at startup: {e}")
+# --- REMOVE OR COMMENT OUT THIS ENTIRE BLOCK ---
+# session_dir_fallback = app.config.get("SESSION_FILE_DIR")
+# if app.config["SESSION_TYPE"] == "filesystem" and session_dir_fallback and not os.path.exists(session_dir_fallback):
+#      try:
+#         os.makedirs(session_dir_fallback)
+#         app.logger.info(f"Created session directory for fallback at startup: {session_dir_fallback}")
+#      except OSError as e:
+#         app.logger.warning(f"Could not create session directory for fallback at startup: {e}")
+# --- END OF BLOCK TO REMOVE/COMMENT ---
 
 # --- Remove the __main__ block for WSGI deployment ---
 # The following block should be removed or commented out.
