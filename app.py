@@ -375,12 +375,12 @@ def index():
         task_type = 'story'
     task_state = None
 
-    if task_to_check:
-        task_entry = get_task_result(task_to_check)
-        if task_entry and task_state:
-            app.logger.info(f"Checking Task {task_to_check} (Type: {task_type}). Found in Redis with state: {task_state}")
-        else:
-            app.logger.info(f"Task {task_to_check} (Type: {task_type}) status check: Not found in Redis or no state")
+if task_to_check:
+    task_entry = get_task_result(task_to_check)
+    if task_entry:
+        task_state = task_entry.get('state')
+        app.logger.info(f"Task {task_to_check} (Type: {task_type}). Found in Redis with state: {task_state}")
+        
         if task_state in ['completed', 'error']:
             results = task_entry
             delete_task_result(task_to_check)
@@ -392,7 +392,24 @@ def index():
                 is_processing_summary = True
             else: # task_type == 'story'
                 is_processing_story = True
-            active_task_id_for_template = task_to_check # Use the ID found
+            active_task_id_for_template = task_to_check
+        else:
+            app.logger.warning(f"Task {task_to_check} found with unexpected state '{task_state}'. Treating as error.")
+            results = {'state': 'error', 'errors': [f"Task ended in unexpected state: {task_state}"], 'type': task_type}
+            delete_task_result(task_to_check)
+            task_id_to_clear = f'current_{task_type}_task_id'
+    else:
+        # If the task is not found in Redis but is in the session, we need to handle this case
+        # It might be that the task has just started and hasn't been stored in Redis yet
+        app.logger.info(f"Task {task_to_check} (Type: {task_type}) not found in Redis. It may be starting or have been cleared.")
+        
+        # Instead of immediately treating as error, check if it just started
+        if task_type == 'summary':
+            is_processing_summary = True
+            active_task_id_for_template = task_to_check
+        else: # task_type == 'story'
+            is_processing_story = True
+            active_task_id_for_template = task_to_check
         else:
              app.logger.warning(f"Task {task_to_check} found with unexpected state '{task_state}'. Treating as error and popping.")
              results = get_task_result(task_to_check)
