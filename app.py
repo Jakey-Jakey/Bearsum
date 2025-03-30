@@ -393,7 +393,7 @@ def index():
                 is_processing_story = True
             active_task_id_for_template = task_to_check # Use the ID found
         else:
-            app.logger.warning(f"Task {task_to_check} found with unexpected state '{task_state}'. Treating as error and popping.")
+             app.logger.warning(f"Task {task_to_check} found with unexpected state '{task_state}'. Treating as error and popping.")
             results = get_task_result(task_to_check)
             delete_task_result(task_to_check)
             if not results:
