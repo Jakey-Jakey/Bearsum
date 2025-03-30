@@ -394,10 +394,10 @@ def index():
             active_task_id_for_template = task_to_check # Use the ID found
         else:
              app.logger.warning(f"Task {task_to_check} found with unexpected state '{task_state}'. Treating as error and popping.")
-            results = get_task_result(task_to_check)
-            delete_task_result(task_to_check)
-            if not results:
-                results = {'state': 'error', 'errors': [f"Task ended in unexpected state: {task_state}"], 'type': task_type}
+             results = get_task_result(task_to_check)
+             delete_task_result(task_to_check)
+             if not results:
+                 results = {'state': 'error', 'errors': [f"Task ended in unexpected state: {task_state}"], 'type': task_type}
              results['state'] = 'error' # Force error state
              task_id_to_clear = f'current_{task_type}_task_id'
 
