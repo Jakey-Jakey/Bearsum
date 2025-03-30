@@ -421,87 +421,54 @@ def index():
         result_content = results.get("result")
         result_type = results.get('type') # Get type from popped results
 
+        # --- MODIFIED SECTION: SKIP MARKDOWN RENDERING ---
         if result_type == 'summary':
-            if isinstance(result_content, str) and result_content.startswith("Error:"):
+            if isinstance(result_content, str) and not result_content.startswith("Error:"):
+                summary_raw = result_content
+                summary_html = None # Skip rendering
+                session['download_summary_raw'] = summary_raw
+                app.logger.info(f"INDEX: Summary content length: {len(summary_raw)}. SKIPPING Markdown rendering.") # MODIFIED LOG
+            elif isinstance(result_content, str) and result_content.startswith("Error:"):
                 flash(f"Summarization failed: {result_content}", 'error')
                 summary_raw = None
-            elif result_content:
-                summary_raw = result_content
-                # --- START Log: Preparing Markdown Render ---
-                app.logger.info(f"INDEX: Summary content length: {len(summary_raw)}. Preparing to render Markdown.")
-                # --- END Log ---
-                try:
-                     # --- START Log: Calling Markdown ---
-                     app.logger.info("INDEX: Calling markdown.markdown() for summary...")
-                     # --- END Log ---
-                     summary_html = markdown.markdown(summary_raw, extensions=['fenced_code', 'sane_lists'])
-                     # --- START Log: Markdown Complete ---
-                     app.logger.info("INDEX: Summary Markdown rendering complete.")
-                     # --- END Log ---
-                     session['download_summary_raw'] = summary_raw
-                except Exception as md_err:
-                     app.logger.error(f"INDEX: Markdown rendering failed for summary: {md_err}") # Existing log
-                     flash("Failed to render summary preview.", 'error')
-                     summary_html = None
-                     session.pop('download_summary_raw', None)
+                summary_html = None
             else:
-                 summary_raw = None
-                 # --- START Log: No Summary Content ---
-                 app.logger.info("INDEX: No summary result content found.")
-                 # --- END Log ---
+                summary_raw = None
+                summary_html = None
+                app.logger.info("INDEX: No summary result content found.")
 
         elif result_type == 'story':
-            if isinstance(result_content, str) and result_content.startswith("Error:"):
-                 flash(f"Story generation failed: {result_content}", 'error')
-                 story_raw = None
-            elif result_content:
+            if isinstance(result_content, str) and not result_content.startswith("Error:"):
                 story_raw = result_content
-                # --- START Log: Preparing Markdown Render ---
-                app.logger.info(f"INDEX: Story content length: {len(story_raw)}. Preparing to render Markdown.")
-                # --- END Log ---
-                try:
-                     # --- START Log: Calling Markdown ---
-                     app.logger.info("INDEX: Calling markdown.markdown() for story...")
-                     # --- END Log ---
-                     story_html = markdown.markdown(story_raw, extensions=['fenced_code', 'sane_lists'])
-                     # --- START Log: Markdown Complete ---
-                     app.logger.info("INDEX: Story Markdown rendering complete.")
-                     # --- END Log ---
-                     session['story_result_raw'] = story_raw
-                except Exception as md_err:
-                     app.logger.error(f"INDEX: Markdown rendering failed for story: {md_err}") # Existing log
-                     flash("Failed to render story preview.", 'error')
-                     story_html = None
-                     session.pop('story_result_raw', None)
+                story_html = None # Skip rendering
+                session['story_result_raw'] = story_raw
+                app.logger.info(f"INDEX: Story content length: {len(story_raw)}. SKIPPING Markdown rendering.") # MODIFIED LOG
+            elif isinstance(result_content, str) and result_content.startswith("Error:"):
+                flash(f"Story generation failed: {result_content}", 'error')
+                story_raw = None
+                story_html = None
             else:
-                 story_raw = None
-                 # --- START Log: No Story Content ---
-                 app.logger.info("INDEX: No story result content found.")
-                 # --- END Log ---
+                story_raw = None
+                story_html = None
+                app.logger.info("INDEX: No story result content found.")
+        # --- END MODIFIED SECTION ---
 
-    # --- START Log: Preparing Template Context ---
     app.logger.info("INDEX: Preparing template render context.")
-    # --- END Log ---
-    app.logger.info(f"Rendering index. Processing Summary: {is_processing_summary}, Processing Story: {is_processing_story}") # Existing log
-    app.logger.info(f"Summary Result Available: {summary_raw is not None}, Story Result Available: {story_raw is not None}") # Existing log
-
-    # Ensure the active task ID is passed correctly to the template
     template_summary_task_id = summary_task_id if is_processing_summary else None
     template_story_task_id = story_task_id if is_processing_story else None
 
-    # --- START Log: Calling render_template ---
     app.logger.info("INDEX: Calling render_template()...")
-    # --- END Log ---
+    # Pass None for HTML, rely on template to handle raw display
     return render_template('index.html',
                            config=app.config,
-                           summary_html=summary_html,
-                           summary_raw=summary_raw,
-                           story_html=story_html,
-                           story_raw=story_raw,
+                           summary_html=None, # Pass None
+                           summary_raw=summary_raw, # Pass raw
+                           story_html=None, # Pass None
+                           story_raw=story_raw, # Pass raw
                            is_processing_summary=is_processing_summary,
                            is_processing_story=is_processing_story,
-                           summary_task_id=template_summary_task_id, # Pass correct active ID
-                           story_task_id=template_story_task_id      # Pass correct active ID
+                           summary_task_id=template_summary_task_id,
+                           story_task_id=template_story_task_id
                            )
 
 @app.route('/process', methods=['POST'])
