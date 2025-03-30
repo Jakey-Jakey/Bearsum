@@ -3,6 +3,7 @@ import os
 import openai # Use the openai library as recommended by Perplexity docs
 import logging
 from dotenv import load_dotenv
+import re
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -163,7 +164,7 @@ def call_llm(prompt, model):
         model (str): The Perplexity model name to use (e.g., 'llama-3-sonar-small-32k-chat').
 
     Returns:
-        str: The LLM's response content, or an error message string.
+        str: The LLM's response content, cleaned of <think> blocks, or an error message string.
     """
     if not client:
          log.error("LLM call attempted but Perplexity client not initialized.")
@@ -173,30 +174,34 @@ def call_llm(prompt, model):
     log.debug(f"Prompt starts with: {prompt[:100]}...")
 
     try:
-        # Use the same chat completions structure
         response = client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
-            # Add other parameters like temperature, max_tokens if needed
-            # Consider adding temperature for more creative stories, e.g., temperature=0.8
             temperature=1
         )
 
-        # Check response structure (same as before)
         if response.choices and response.choices[0].message and response.choices[0].message.content is not None:
-             content = response.choices[0].message.content
-             log.info(f"Perplexity call successful. Response length: {len(content)} chars.")
-             return content.strip()
+             raw_content = response.choices[0].message.content
+             log.info(f"Perplexity call successful. Raw response length: {len(raw_content)} chars.")
+
+             # --- ADD CLEANING STEP HERE ---
+             # Use regex to find and remove <think>...</think> blocks, including content inside.
+             # re.DOTALL makes '.' match newline characters as well.
+             # .*? makes the match non-greedy, important if there are multiple blocks.
+             cleaned_content = re.sub(r"<think>.*?</think>", "", raw_content, flags=re.DOTALL)
+             log.info(f"Cleaned response length: {len(cleaned_content)} chars.")
+             # -----------------------------
+
+             return cleaned_content.strip() # Return the cleaned content
         else:
              log.error(f"Unexpected Perplexity response structure: {response}")
              return "Error: Unexpected response structure from LLM service."
 
-    # --- Error handling remains largely the same, using openai exceptions ---
+    # --- Error handling remains largely the same ---
     except openai.RateLimitError as e:
         log.warning(f"Perplexity API request exceeded rate limit: {e}")
         return "Error: LLM rate limit exceeded. Please try again later."
     except openai.AuthenticationError as e:
-        # This error will trigger if the PERPLEXITY_API_KEY is invalid
         log.error(f"Perplexity API authentication failed: {e}")
         return "Error: LLM authentication failed. Check API key."
     except openai.APIConnectionError as e:
@@ -205,7 +210,7 @@ def call_llm(prompt, model):
     except openai.APITimeoutError as e:
         log.warning(f"Perplexity API request timed out: {e}")
         return "Error: LLM request timed out."
-    except openai.APIStatusError as e: # Catch other API errors (e.g., 4xx, 5xx)
+    except openai.APIStatusError as e:
          log.error(f"Perplexity API returned an error status: {e}")
          return f"Error: LLM service returned status {e.status_code}."
     except Exception as e:
