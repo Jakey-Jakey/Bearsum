@@ -374,11 +374,12 @@ def index():
         task_type = 'story'
 
     if task_to_check:
+        task_state = None
         task_entry = get_task_result(task_to_check)
-        if task_entry:
-            task_state = task_entry.get('state')
-        app.logger.info(f"Checking Task {task_to_check} (Type: {task_type}). Found in task_results with state: {task_state}")
-
+        if task_entry and task_state:
+            app.logger.info(f"Checking Task {task_to_check} (Type: {task_type}). Found in Redis with state: {task_state}")
+        else:
+            app.logger.info(f"Task {task_to_check} (Type: {task_type}) status check: Not found in Redis or no state")
         if task_state in ['completed', 'error']:
             results = task_entry
             delete_task_result(task_to_check)
