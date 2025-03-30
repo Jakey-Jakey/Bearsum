@@ -10,3 +10,4 @@ redis>=4.0
 requests>=2.25
 gunicorn   # <--- Ensure this is present
 gevent     # <--- Ensure this is present
+numpy
