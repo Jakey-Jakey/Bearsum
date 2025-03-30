@@ -8,7 +8,11 @@ import threading
 import markdown
 from datetime import datetime # Import datetime for formatting
 from flask import Flask, request, render_template, redirect, url_for, session, flash, jsonify, send_file
-from flask_session import Session
+# >>> MODIFY Flask-Session import and add redis <<<
+# from flask_session import Session # Remove this if present
+from flask_session import Session # Keep or add this
+import redis # <<< ADD THIS IMPORT
+# >>> END MODIFICATION <<<
 from flask_sse import sse
 from dotenv import load_dotenv
 
