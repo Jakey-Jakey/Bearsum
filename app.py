@@ -318,7 +318,9 @@ def run_story_generation_async(task_id: str, github_url: str):
 # (index, process_files, generate_story, download_summary routes remain unchanged)
 @app.route('/', methods=['GET'])
 def index():
-    app.logger.info(f"Index route accessed. Session: {dict(session)}, Task Results Keys: {list(task_results.keys())}")
+    # --- START Log: Route Entry ---
+    app.logger.info("INDEX: Route accessed.")
+    # --- END Log ---
 
     summary_task_id = session.get('current_summary_task_id')
     story_task_id = session.get('current_story_task_id')
@@ -335,40 +337,63 @@ def index():
     if summary_task_id:
         task_to_check = summary_task_id
         task_type = 'summary'
+        # --- START Log: Task ID Check ---
+        app.logger.info(f"INDEX: Checking for summary task ID: {task_to_check}")
+        # --- END Log ---
     elif story_task_id:
         task_to_check = story_task_id
         task_type = 'story'
+        # --- START Log: Task ID Check ---
+        app.logger.info(f"INDEX: Checking for story task ID: {task_to_check}")
+        # --- END Log ---
 
     if task_to_check and task_to_check in task_results:
+        # --- START Log: Task Found in Dict ---
+        app.logger.info(f"INDEX: Task {task_to_check} found in task_results dict.")
+        # --- END Log ---
         task_entry = task_results.get(task_to_check)
         task_state = task_entry.get('state')
-        app.logger.info(f"Checking Task {task_to_check} (Type: {task_type}). Found in task_results with state: {task_state}")
+        # --- START Log: Task State ---
+        app.logger.info(f"INDEX: Task {task_to_check} state is: {task_state}")
+        # --- END Log ---
 
         if task_state in ['completed', 'error']:
-            results = task_results.pop(task_to_check)
+            # --- START Log: Popping Result ---
+            app.logger.info(f"INDEX: Task {task_to_check} state is final. Popping result...")
+            # --- END Log ---
+            results = task_results.pop(task_to_check) # <<< Existing pop
             task_id_to_clear = f'current_{task_type}_task_id'
-            app.logger.info(f"{task_type.capitalize()} Task {task_to_check}: Results retrieved (state={task_state}) and cleared.")
+            # --- START Log: Pop Successful ---
+            app.logger.info(f"INDEX: Task {task_to_check} result popped successfully.")
+            # --- END Log ---
         elif task_state == 'processing':
-            app.logger.info(f"{task_type.capitalize()} Task {task_to_check}: Still processing.")
+            app.logger.info(f"INDEX: Task {task_to_check}: Still processing.") # Existing log
             if task_type == 'summary':
                 is_processing_summary = True
             else: # task_type == 'story'
                 is_processing_story = True
             active_task_id_for_template = task_to_check # Use the ID found
         else:
-             app.logger.warning(f"Task {task_to_check} found with unexpected state '{task_state}'. Treating as error and popping.")
+             # --- START Log: Unexpected State ---
+             app.logger.warning(f"INDEX: Task {task_to_check} has unexpected state '{task_state}'. Popping.")
+             # --- END Log ---
              results = task_results.pop(task_to_check, {'state': 'error', 'errors': [f"Task ended in unexpected state: {task_state}"], 'type': task_type}) # Pop safely
              results['state'] = 'error' # Force error state
              task_id_to_clear = f'current_{task_type}_task_id'
 
     elif task_to_check:
-         app.logger.warning(f"Task {task_to_check} (Type: {task_type}) found in session but not in task_results. Clearing session.")
+         # --- START Log: Task ID Mismatch ---
+         app.logger.warning(f"INDEX: Task {task_to_check} in session but NOT in task_results dict.")
+         # --- END Log ---
          task_id_to_clear = f'current_{task_type}_task_id'
 
 
     # Clear session variables if results were retrieved or task was invalid
     if task_id_to_clear:
         session.pop(task_id_to_clear, None)
+        # --- START Log: Session Cleared ---
+        app.logger.info(f"INDEX: Cleared session key {task_id_to_clear}")
+        # --- END Log ---
 
     # Clear download caches if NOT processing that specific task type
     if not is_processing_summary:
@@ -383,9 +408,15 @@ def index():
     story_html, story_raw = None, None
 
     if results: # Only process if results were actually popped
+        # --- START Log: Processing Popped Results ---
+        app.logger.info(f"INDEX: Processing popped results for task type: {results.get('type')}")
+        # --- END Log ---
         errors = results.get("errors")
         if errors:
             for error in errors: flash(error, 'error')
+            # --- START Log: Flashing Errors ---
+            app.logger.info(f"INDEX: Flashing errors: {errors}")
+            # --- END Log ---
 
         result_content = results.get("result")
         result_type = results.get('type') # Get type from popped results
@@ -396,16 +427,28 @@ def index():
                 summary_raw = None
             elif result_content:
                 summary_raw = result_content
+                # --- START Log: Preparing Markdown Render ---
+                app.logger.info(f"INDEX: Summary content length: {len(summary_raw)}. Preparing to render Markdown.")
+                # --- END Log ---
                 try:
+                     # --- START Log: Calling Markdown ---
+                     app.logger.info("INDEX: Calling markdown.markdown() for summary...")
+                     # --- END Log ---
                      summary_html = markdown.markdown(summary_raw, extensions=['fenced_code', 'sane_lists'])
+                     # --- START Log: Markdown Complete ---
+                     app.logger.info("INDEX: Summary Markdown rendering complete.")
+                     # --- END Log ---
                      session['download_summary_raw'] = summary_raw
                 except Exception as md_err:
-                     app.logger.error(f"Markdown rendering failed for summary: {md_err}")
+                     app.logger.error(f"INDEX: Markdown rendering failed for summary: {md_err}") # Existing log
                      flash("Failed to render summary preview.", 'error')
                      summary_html = None
                      session.pop('download_summary_raw', None)
             else:
                  summary_raw = None
+                 # --- START Log: No Summary Content ---
+                 app.logger.info("INDEX: No summary result content found.")
+                 # --- END Log ---
 
         elif result_type == 'story':
             if isinstance(result_content, str) and result_content.startswith("Error:"):
@@ -413,24 +456,42 @@ def index():
                  story_raw = None
             elif result_content:
                 story_raw = result_content
+                # --- START Log: Preparing Markdown Render ---
+                app.logger.info(f"INDEX: Story content length: {len(story_raw)}. Preparing to render Markdown.")
+                # --- END Log ---
                 try:
+                     # --- START Log: Calling Markdown ---
+                     app.logger.info("INDEX: Calling markdown.markdown() for story...")
+                     # --- END Log ---
                      story_html = markdown.markdown(story_raw, extensions=['fenced_code', 'sane_lists'])
+                     # --- START Log: Markdown Complete ---
+                     app.logger.info("INDEX: Story Markdown rendering complete.")
+                     # --- END Log ---
                      session['story_result_raw'] = story_raw
                 except Exception as md_err:
-                     app.logger.error(f"Markdown rendering failed for story: {md_err}")
+                     app.logger.error(f"INDEX: Markdown rendering failed for story: {md_err}") # Existing log
                      flash("Failed to render story preview.", 'error')
                      story_html = None
                      session.pop('story_result_raw', None)
             else:
                  story_raw = None
+                 # --- START Log: No Story Content ---
+                 app.logger.info("INDEX: No story result content found.")
+                 # --- END Log ---
 
-    app.logger.info(f"Rendering index. Processing Summary: {is_processing_summary}, Processing Story: {is_processing_story}")
-    app.logger.info(f"Summary Result Available: {summary_raw is not None}, Story Result Available: {story_raw is not None}")
+    # --- START Log: Preparing Template Context ---
+    app.logger.info("INDEX: Preparing template render context.")
+    # --- END Log ---
+    app.logger.info(f"Rendering index. Processing Summary: {is_processing_summary}, Processing Story: {is_processing_story}") # Existing log
+    app.logger.info(f"Summary Result Available: {summary_raw is not None}, Story Result Available: {story_raw is not None}") # Existing log
 
     # Ensure the active task ID is passed correctly to the template
     template_summary_task_id = summary_task_id if is_processing_summary else None
     template_story_task_id = story_task_id if is_processing_story else None
 
+    # --- START Log: Calling render_template ---
+    app.logger.info("INDEX: Calling render_template()...")
+    # --- END Log ---
     return render_template('index.html',
                            config=app.config,
                            summary_html=summary_html,
@@ -442,7 +503,6 @@ def index():
                            summary_task_id=template_summary_task_id, # Pass correct active ID
                            story_task_id=template_story_task_id      # Pass correct active ID
                            )
-
 
 @app.route('/process', methods=['POST'])
 def process_files():
