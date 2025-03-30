@@ -355,6 +355,7 @@ def run_story_generation_async(task_id: str, github_url: str):
 @app.route('/', methods=['GET'])
 def index():
     app.logger.info(f"Index route accessed. Session: {dict(session)}")
+
     summary_task_id = session.get('current_summary_task_id')
     story_task_id = session.get('current_story_task_id')
     results = None
@@ -363,18 +364,18 @@ def index():
     is_processing_story = False
     active_task_id_for_template = None # Store the ID of the task currently processing
 
-# --- RESULT CHECKING LOGIC ---
+    # --- RESULT CHECKING LOGIC ---
     task_to_check = None
     task_type = None
     task_state = None
-    
+
     if summary_task_id:
         task_to_check = summary_task_id
         task_type = 'summary'
     elif story_task_id:
         task_to_check = story_task_id
         task_type = 'story'
-    
+
     if task_to_check:
         # Try to get the task from Redis
         task_entry = get_task_result(task_to_check)
@@ -389,11 +390,13 @@ def index():
                 results = task_entry
                 delete_task_result(task_to_check)
                 task_id_to_clear = f'current_{task_type}_task_id'
+                app.logger.info(f"{task_type.capitalize()} Task {task_to_check}: Results retrieved (state={task_state}) and cleared.")
             elif task_state == 'processing':
                 # Task is still running
+                app.logger.info(f"{task_type.capitalize()} Task {task_to_check}: Still processing.")
                 if task_type == 'summary':
                     is_processing_summary = True
-                else:
+                else: # task_type == 'story'
                     is_processing_story = True
                 active_task_id_for_template = task_to_check
             else:
@@ -411,23 +414,7 @@ def index():
                 is_processing_summary = True
             else:
                 is_processing_story = True
-                active_task_id_for_template = task_to_check
-            else: # task_type == 'story'
-                is_processing_story = True
-                active_task_id_for_template = task_to_check
-        else:
-             app.logger.warning(f"Task {task_to_check} found with unexpected state '{task_state}'. Treating as error and popping.")
-             results = get_task_result(task_to_check)
-             delete_task_result(task_to_check)
-             if not results:
-                 results = {'state': 'error', 'errors': [f"Task ended in unexpected state: {task_state}"], 'type': task_type}
-             results['state'] = 'error' # Force error state
-             task_id_to_clear = f'current_{task_type}_task_id'
-
-    elif task_to_check:
-         app.logger.warning(f"Task {task_to_check} (Type: {task_type}) found in session but not in task_results. Clearing session.")
-         task_id_to_clear = f'current_{task_type}_task_id'
-
+            active_task_id_for_template = task_to_check
 
     # Clear session variables if results were retrieved or task was invalid
     if task_id_to_clear:
@@ -505,8 +492,6 @@ def index():
                            summary_task_id=template_summary_task_id, # Pass correct active ID
                            story_task_id=template_story_task_id      # Pass correct active ID
                            )
-
-
 @app.route('/process', methods=['POST'])
 def process_files():
     # Clear potentially active tasks
