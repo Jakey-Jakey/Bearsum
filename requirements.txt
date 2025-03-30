@@ -12,3 +12,4 @@ gunicorn   # <--- Ensure this is present
 gevent     # <--- Ensure this is present
 numpy
 pandas
+sounddevice
