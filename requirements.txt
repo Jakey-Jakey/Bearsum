@@ -7,7 +7,7 @@ Flask-Session>=0.4
 Flask-SSE>=0.2.1
 Markdown>=3.3
 redis>=4.0 # Add redis client library
-requests>=2.25 # <-- ADD THIS LINE
+requests>=2.25 # 
 
 # For production deployment (example)
 # gunicorn
